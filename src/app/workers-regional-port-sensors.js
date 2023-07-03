@@ -1,6 +1,7 @@
 const { http, Database } = require("../helpers/newosase");
 const getOpnimusPortStatus = require("./get-opnimus-port-status");
 const alarmDb = require("../helpers/write-alarm-db");
+const sendTelegramAlert = require("./send-message");
 
 const defineAlarm = (rawData, dataDbPort) => {
     const newAlarm = [];
@@ -13,6 +14,8 @@ const defineAlarm = (rawData, dataDbPort) => {
             if(portItem.rtu_code != item.rtu_sname)
                 return false;
             if(portItem.port != item.no_port)
+                return false;
+            if(portItem.unit != item.units)
                 return false;
             return true;
         });
@@ -71,7 +74,7 @@ module.exports = async (regional) => {
         });
 
         const { newPorts, openedAlarm, closedAlarm } = defineAlarm(alarmRawData, dbPort.results);
-        console.log(newPorts.length, openedAlarm.length, closedAlarm.length)
+        // console.log(newPorts.length, openedAlarm.length, closedAlarm.length)
 
         if(newPorts.length < 1)
             console.log("newPorts length: "+newPorts.length);
@@ -93,6 +96,8 @@ module.exports = async (regional) => {
             // close state in rtu port status
             await alarmDb.closePortState(closedAlarm);
         }
+
+        await sendTelegramAlert();
         
         // console.log(newAlarm.length);
         // await alarmDb.writeNewAlarm(newAlarm);

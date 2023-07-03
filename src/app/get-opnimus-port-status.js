@@ -10,7 +10,7 @@ module.exports = async (params) => {
             console.warn(response.data);
     } catch(err) {
         if (err.toJSON)
-            console.error(err.response?.data, err.toJSON());
+            console.error(err.response.data, err.toJSON());
         else
             console.error(err);
     }

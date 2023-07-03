@@ -183,7 +183,6 @@ const closePortState = async (alarmList) => {
         query: "UPDATE rtu_port_status SET state=0, end_at=? WHERE id IN (?)",
         bind: [currDateTime, portIds]
     });
-    console.log(db.query);
 };
 
 module.exports = { writeNewAlarm, writeNewMessage, closePortState };

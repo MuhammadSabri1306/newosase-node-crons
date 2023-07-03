@@ -1,12 +1,12 @@
 const cron = require("node-cron");
-// const newosaseRtuAlert = require("./rtu-alert");
+const mainApp = require("./src/index");
+const { toDatetimeString } = require("./src/helpers/date");
 
-cron.schedule("* * * * *", () => {
-    console.log("Newosase RTU's Alert (run on every minute)");
-
-    const date = new Date();
-    console.log(`${ date.getFullYear() }-${ date.getMonth() + 1 }-${ date.getDate() } ${ date.getHours() }:${ date.getMinutes() }:${ date.getSeconds() }`);
+cron.schedule("*/2 * * * *", async () => {
+    console.log("\n\nNewosase RTU's Alert (run on every 2 minute)");
+    console.log(`Start at: ${ toDatetimeString(new Date()) }`);
 
     // newosaseRtuAlert();
-    console.log('');
+    await mainApp();
+    console.log(`Finish at: ${ toDatetimeString(new Date()) }`);
 });

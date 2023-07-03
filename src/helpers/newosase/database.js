@@ -9,6 +9,7 @@ class Database
         this.conn = null;
         this.query = null;
         this.success = false;
+        this.connected = false;
     }
 
     setupDb(dbKey) {
@@ -35,26 +36,49 @@ class Database
         });
     }
 
+    close() {
+        if(!this.connected)
+            return;
+        this.conn.end(err => {
+            if(err)
+                console.error("Error closing the database connection: ", err);
+            else
+                this.connected = false;
+        });
+    }
+
     runQuery(config) {
         if(typeof config == "string") {
-            this.query = config;
-        } else {
-            if(config.databaseKey)
-                this.setupDb(config.databaseKey);
-            if(config.query)
-                this.query = config.query;
+            config = {
+                query: config,
+                autoClose: true
+            };
         }
+
+        if(config.databaseKey)
+            this.setupDb(config.databaseKey);
+        if(config.autoClose !== false)
+            config.autoClose = true;
+
+        if(config.query && config.bind)
+            this.query = mysql.format(config.query, config.bind);
+        else if(config.query)
+            this.query = config.query;
 
         if(!this.conn || config.databaseKey)
             this.conn = mysql.createConnection(this.db_config);
 
         return new Promise((resolve, reject) => {
-            this.conn.connect(error => {
-                if(!error)
-                    return;
-                console.error("Error connecting to the database: ", error);
-                reject(error);
-            });
+            if(!this.connected) {
+                this.conn.connect(error => {
+                    if(!error) {
+                        this.connected = true;
+                        return;
+                    }
+                    console.error("Error connecting to the database: ", error);
+                    reject(error);
+                });
+            }
     
             this.conn.query(this.query, (error, results, fields) => {
                 if(error) {
@@ -71,11 +95,8 @@ class Database
                 }
                 
                 this.pushLog();
-                this.conn.end(err => {
-                    if(!err)
-                        return;
-                    console.error("Error closing the database connection: ", err);
-                });
+                if(config.autoClose)
+                    this.close();
             });
         });
     }

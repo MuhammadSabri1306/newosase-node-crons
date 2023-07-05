@@ -50,7 +50,7 @@ module.exports = async (dataLocation) => {
                     bind = [newData.name, newData.sname, newData.id_datel, currDateTime, oldData.id];
                 }
 
-                const autoClose = (newRowWithId.length < 1) || (newRowWithIdM.length < 1);
+                const autoClose = (newRowWithId.length < 1) && (newRowWithIdM.length < 1);
                 await db.runQuery({ query, bind, autoClose });
             });
         }

@@ -16,7 +16,7 @@ module.exports = async (dataDatel) => {
 
         dataDatel.forEach(item => {
             const currDatel = results.find(dbItem => {
-                return dbItem.datel_name === item.datel;
+                return dbItem.id == item.id_datel;
             });
 
             if(currDatel) {
@@ -35,8 +35,8 @@ module.exports = async (dataDatel) => {
             updatedDatel.forEach(async (item) => {
                 const { oldData, newData } = item;
                 await db.runQuery({
-                    query: "UPDATE datel SET id=?, witel_id=?, timestamp=? WHERE datel_name=?",
-                    bind: [newData.id_datel, newData.id_witel, currDateTime, oldData.datel_name],
+                    query: "UPDATE datel SET datel_name=?, witel_id=?, timestamp=? WHERE id=?",
+                    bind: [newData.datel, newData.id_witel, currDateTime, oldData.id],
                     autoClose: newDatel.length < 1
                 });
             });

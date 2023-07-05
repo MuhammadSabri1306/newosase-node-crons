@@ -16,7 +16,7 @@ module.exports = async (dataWitel) => {
 
         dataWitel.forEach(item => {
             const currWitel = results.find(dbItem => {
-                return dbItem.witel_name === item.witel;
+                return dbItem.id == item.id_witel;
             });
 
             if(currWitel) {
@@ -35,8 +35,8 @@ module.exports = async (dataWitel) => {
             updatedWitel.forEach(async (item) => {
                 const { oldData, newData } = item;
                 await db.runQuery({
-                    query: "UPDATE witel SET id=?, regional_id=?, timestamp=? WHERE witel_name=?",
-                    bind: [newData.id_witel, newData.id_regional, currDateTime, oldData.witel_name],
+                    query: "UPDATE witel SET witel_name=?, regional_id=?, timestamp=? WHERE id=?",
+                    bind: [newData.witel, newData.id_regional, currDateTime, oldData.id],
                     autoClose: newWitel.length < 1
                 });
             });

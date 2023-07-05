@@ -21,7 +21,7 @@ const createRegionalWorker = dataRegional => {
 };
 
 module.exports = async () => {
-    console.log("\n\nmainApp is starting..");
+    console.log("\nmainApp is starting..");
     const db = new Database();
 
     try {
@@ -34,6 +34,6 @@ module.exports = async () => {
 
     } catch(err) {
         console.error(err);
-        console.log("\n\nmainApp is is stopped running..");
+        console.log("\nmainApp is stopped running..");
     }
 };

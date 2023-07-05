@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node .",
-    "test": "node ./src/index"
+    "test": "node ./test.js"
   },
   "author": "Muhammad Sabri",
   "license": "ISC",

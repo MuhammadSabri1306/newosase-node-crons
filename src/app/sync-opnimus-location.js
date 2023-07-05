@@ -11,7 +11,13 @@ module.exports = async () => {
         // await createWorker("sync opnimus witel", "sync-opnimus-witel", dataLocations);
         
         // Worker Datel
-        await createWorker("sync opnimus datel", "sync-opnimus-datel", dataLocations);
+        // await createWorker("sync opnimus datel", "sync-opnimus-datel", dataLocations);
+        
+        // Worker Location
+        // await createWorker("sync opnimus location", "sync-opnimus-location", dataLocations);
+        
+        // Worker RTU
+        await createWorker("sync opnimus RTU", "sync-opnimus-rtu", dataLocations);
 
     } catch(err) {
         console.error(err);

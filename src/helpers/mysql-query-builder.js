@@ -34,4 +34,51 @@ class InsertQueryBuilder
     }
 }
 
-module.exports = { InsertQueryBuilder };
+class SelectQueryBuilder
+{
+    constructor(tableName) {
+        this.tableName = tableName;
+        this.joinTables = [];
+        this.fields = [];
+        this.whereQueries = [];
+        this.bind = [];
+    }
+
+    addFields(name) {
+        this.fields.push(name);
+    }
+
+    join(tableName, bridgeQuery, joinOperator = "JOIN") {
+        this.joinTables.push(`${ joinOperator } ${ tableName } ON ${ bridgeQuery }`);
+    }
+
+    where(queryString, bindValue = null, operator = "AND") {
+        let query = this.whereQueries.length > 0 ? operator + " " + queryString : queryString;
+        this.whereQueries.push(query);
+        if(bindValue !== null)
+            this.bind.push(bindValue);
+    }
+
+    getQuery() {
+        const queryFields = this.fields.length > 0 ? this.fields.join(", ") : `${ this.tableName }.*`;
+        let query = `SELECT ${ queryFields } FROM ${ this.tableName }`;
+        
+        if(this.joinTables.length > 0) {
+            const queryJoin = this.joinTables.join(" ");
+            query += " " + queryJoin;
+        }
+        
+        if(this.whereQueries.length > 0) {
+            const queryWhere = this.whereQueries.join(" ");
+            query += " WHERE " + queryWhere;
+        }
+
+        return query;
+    }
+
+    getBuiltBindData() {
+        return this.bind;
+    }
+}
+
+module.exports = { InsertQueryBuilder, SelectQueryBuilder };

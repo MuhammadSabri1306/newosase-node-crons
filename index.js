@@ -1,5 +1,5 @@
 const cron = require("node-cron");
-const { main, syncOpnimusLocation } = require("./src/index");
+const { main, syncOpnimusLocation, telegramAlertV2 } = require("./src/index");
 const { toDatetimeString } = require("./src/helpers/date");
 
 /*
@@ -15,12 +15,18 @@ cron.schedule("*/2 * * * *", () => {
 });
 
 /*
+ * Check Alarm Stack and Send Alert
+ * Running all time without cron
+ */
+telegramAlertV2();
+
+/*
  * Newosase RTU list watcher
  * Synchronize RTU list and location to opnimus_db_new
  * Runs every 00.00 WIB
  */
 cron.schedule("0 0 * * *", () => {
-    console.log("\n\nWatch Newosase location (run on every 1 minute)");
+    console.log("\n\nWatch Newosase location (run on every 24 o'clock)");
     console.log(`Start at: ${ toDatetimeString(new Date()) }`);
     syncOpnimusLocation().then(() =>  {
         console.log(`Finish at: ${ toDatetimeString(new Date()) }`);

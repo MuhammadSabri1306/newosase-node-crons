@@ -1,10 +1,16 @@
+const toCodeFormat = text => "```" + text + "```";
+
+const newLine = text => "\n" + text;
+
 const buildMessage = params => {
     const data = {
         title: params.title || "OPNIMUS ALERT",
+        description: params.description || "",
         timestamp: params.timestamp || "-",
         regional: params.regional || "-",
         witel: params.witel || "-",
         location: params.location || "-",
+        rtuCode: params.rtuCode || "-",
         nodeName: params.nodeName || "-",
         siteType: params.siteType || "-",
         portName: params.portName || "-",
@@ -16,29 +22,32 @@ const buildMessage = params => {
             : []
     };
 
-    return `⚡️ ${ data.title }⚡️ 
-Pada ${ data.timestamp }
+    let message = `⚡️ ${ data.title }⚡️`;
+    message += newLine("Pada " + data.timestamp);
+    message += newLine("");
 
-Terpantau PLN OFF dengan detail sebagai berikut:
-7️⃣ Regional  : ${ data.regional }
-🏢 Witel     : ${ data.witel }
-🏬 Lokasi    : ${ data.location }
-🎛 Node Name : ${ data.nodeName }
-🔑 Tipe Site : ${ data.siteType }
+    let detail = "";
+    detail += newLine("7️⃣ Regional  : " + data.regional);
+    detail += newLine("🏢 Witel     : " + data.witel);
+    detail += newLine("🏬 Lokasi    : " + data.location);
+    detail += newLine("🎛 RTU Name : " + data.rtuCode);
+    detail += newLine("🏪 Node Name : " + data.nodeName);
+    // detail += newLine("🔑 Tipe Site : " + data.siteType);
+    detail += newLine("");
+    detail += newLine("Port Alarm Detail:");
+    detail += newLine("⚠️ Nama Port : " + data.portName);
+    detail += newLine("🔌 Port      : " + data.port);
+    detail += newLine("✴️ Value     : " + data.value);
+    detail += newLine("🌋 Status    : " + data.status);
+    detail += newLine("📅 Waktu     : " + data.timestamp);
+    message += newLine(toCodeFormat(detail));
 
-Port Alarm Detail:
-⚠️ Nama Port : ${ data.portName }
-🔌 Port      : ${ data.port }
-✴️ Value     : ${ data.value }
-🌋 Status    : ${ data.status }
-📅 Waktu     : ${ data.timestamp } 
+    message += newLine("");
+    message += newLine("❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.");
+    message += newLine("Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.");
+    message += newLine("#OPNIMUS #PORTALARM #TR7");
 
-PIC Lokasi ini adalah:  ${ data.pic.join(" ") }
-
-❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.
-Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.
-
-#OPNIMUS #PORTALARM #TR7`;
+    return message;
 
 };
 

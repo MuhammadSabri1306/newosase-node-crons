@@ -4,7 +4,7 @@ const path = require("path");
 module.exports = (name, workerPath, workerData) => {
     return new Promise((resolve, reject) => {
 
-        workerPath = path.resolve(__dirname, "../workers/" + workerPath);
+        workerPath = path.resolve(__dirname, "../workers/" + workerPath + ".js");
         const worker = new Worker(workerPath, { workerData });
 
         worker.on("message", data => resolve(data));

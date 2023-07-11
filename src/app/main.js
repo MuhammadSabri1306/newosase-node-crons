@@ -1,11 +1,11 @@
-const { Worker, workerData } = require("worker_threads");
+const { Worker } = require("worker_threads");
 const path = require("path");
 const Database = require("../helpers/newosase/database");
 
 const createRegionalWorker = dataRegional => {
     return new Promise((resolve, reject) => {
 
-        const workerPath = path.resolve(__dirname, "../workers/sync-rtu-port-status");
+        const workerPath = path.resolve(__dirname, "../workers/sync-rtu-port-status.js");
         const worker = new Worker(workerPath, {
             workerData: { dataRegional }
         });
@@ -26,8 +26,8 @@ module.exports = async () => {
 
     try {
 
-        const { results } = await db.runQuery("SELECT * FROM regional");
-        // const { results } = await db.runQuery("SELECT * FROM regional WHERE id=2");
+        // const { results } = await db.runQuery("SELECT * FROM regional");
+        const { results } = await db.runQuery("SELECT * FROM regional WHERE id=2");
         for(let dataRegional of results) {
             await createRegionalWorker(dataRegional);
         }

@@ -1,93 +1,8 @@
 const Database = require("./newosase/database");
 const { toDatetimeString } = require("./date");
+const { InsertQueryBuilder } = require("../helpers/mysql-query-builder");
 
-class InsertQueryBuilder
-{
-    constructor(tableName) {
-        this.tableName = tableName;
-        this.fields = [];
-        this.rows = [];
-    }
-
-    addFields(name) {
-        this.fields.push(name);
-    }
-
-    appendRow(row) {
-        this.rows.push(row);
-    }
-
-    getQuery() {
-        const queryFields = this.fields.join(", ");
-        const queryBindMarks = this.rows
-            .map(() => {
-                return "(" + this.fields.map(() => "?").join(", ") + ")";
-            })
-            .join(", ");
-
-        return `INSERT INTO ${ this.tableName } (${ queryFields }) VALUES ${ queryBindMarks }`;
-    }
-
-    getBuiltBindData() {
-        const data = [];
-        this.rows.forEach(row => {
-            row.forEach(item => data.push(item));
-        });
-        return data;
-    }
-}
-
-// const writeNewAlarm = async (alarmList) => {
-//     if(alarmList.length < 1)
-//         return;
-    
-//     const db = new Database();
-//     const queryDbPort = new InsertQueryBuilder('rtu_port_status');
-//     queryDbPort.addFields('rtu_code');
-//     queryDbPort.addFields('port');
-//     queryDbPort.addFields('port_name');
-//     queryDbPort.addFields('value');
-//     queryDbPort.addFields('unit');
-//     queryDbPort.addFields('rtu_status');
-//     queryDbPort.addFields('start_at');
-//     queryDbPort.addFields('state');
-//     queryDbPort.addFields('location');
-//     queryDbPort.addFields('regional_id');
-    
-//     const currDateTime = toDatetimeString(new Date());
-
-//     alarmList.forEach(item => {
-//         queryDbPort.appendRow([item.rtu_sname, item.no_port, item.port_name, (item.value || 0), item.units, item.rtu_status,
-//             currDateTime, 1, item.location, item.regional_id]);
-//     });
-
-//     const resultDbPort = await db.runQuery({
-//         query: queryDbPort.getQuery(),
-//         bind: queryDbPort.getBuiltBindData(),
-//         autoClose: false
-//     });
-
-//     let results = resultDbPort.results;
-//     console.log(results.affectedRows);
-
-//     const queryDbMsg = new InsertQueryBuilder("rtu_port_message");
-//     queryDbMsg.addFields("status_id");
-//     queryDbMsg.addFields("created_at");
-
-//     for(let statusId=results.insertId; statusId<(results.insertId + results.affectedRows); statusId++) {
-//         queryDbMsg.appendRow([statusId, currDateTime]);
-//     }
-
-//     const resultDbMsg = await db.runQuery({
-//         query: queryDbMsg.getQuery(),
-//         bind: queryDbMsg.getBuiltBindData()
-//     });
-
-//     results = resultDbMsg.results;
-//     console.log(results.affectedRows);
-// };
-
-const writeNewAlarm = async (alarmList) => {
+const writeNewPortAlarm = async (alarmList) => {
     if(alarmList.length < 1)
         return;
     
@@ -99,6 +14,7 @@ const writeNewAlarm = async (alarmList) => {
     queryDbPort.addFields('value');
     queryDbPort.addFields('unit');
     queryDbPort.addFields('rtu_status');
+    queryDbPort.addFields('port_status');
     queryDbPort.addFields('start_at');
     queryDbPort.addFields('state');
     queryDbPort.addFields('location');
@@ -111,7 +27,7 @@ const writeNewAlarm = async (alarmList) => {
         if(!isSeverityNormal)
             openedAlarm++;
         queryDbPort.appendRow([item.rtu_sname, item.no_port, item.port_name, (item.value || 0), item.units, item.rtu_status,
-            currDateTime, !isSeverityNormal, item.location, item.regional_id]);
+            item.severity.name, currDateTime, !isSeverityNormal, item.location, item.regional_id]);
     });
 
     const resultDbPort = await db.runQuery({
@@ -141,13 +57,10 @@ const writeNewAlarm = async (alarmList) => {
     //     queryDbMsg.appendRow([statusId, currDateTime]);
     // }
 
-    const resultDbMsg = await db.runQuery({
+    await db.runQuery({
         query: queryDbMsg.getQuery(),
         bind: queryDbMsg.getBuiltBindData()
     });
-
-    // results = resultDbMsg.results;
-    // console.log(results.affectedRows);
 };
 
 const writeNewMessage = async (alarmList) => {
@@ -170,14 +83,8 @@ const writeNewMessage = async (alarmList) => {
     });
 };
 
-const closePortState = async (alarmList) => {
-    // if(alarmList.length < 1)
-    //     return;
-
+const closePortState = async (portIds) => {
     const currDateTime = toDatetimeString(new Date());
-    const portIds = alarmList
-        .map(item => item.portStatusId);
-
     const db = new Database();
     await db.runQuery({
         query: "UPDATE rtu_port_status SET state=0, end_at=? WHERE id IN (?)",
@@ -185,4 +92,46 @@ const closePortState = async (alarmList) => {
     });
 };
 
-module.exports = { writeNewAlarm, writeNewMessage, closePortState };
+const openAlarmState = async (alarmList) => {
+    const currDateTime = toDatetimeString(new Date());
+    const db = new Database();
+
+    try {
+        for(let item of alarmList) {
+            if(item.oldRow.state == 1) {
+                await db.runQuery({
+                    query: "UPDATE rtu_port_status SET value=?, rtu_status=?, port_status=? WHERE id=?",
+                    bind: [item.newRow.value, item.newRow.rtu_status, item.newRow.severity.name, item.oldRow.id],
+                    autoClose: false
+                });
+            } else {
+                await db.runQuery({
+                    query: "UPDATE rtu_port_status SET value=?, rtu_status=?, port_status=?, state=?, start_at=? WHERE id=?",
+                    bind: [item.newRow.value, item.newRow.rtu_status, item.newRow.severity.name, true, currDateTime, item.oldRow.id],
+                    autoClose: false
+                });
+            }
+        
+            await db.runQuery({
+                query: "INSERT INTO rtu_port_message (status_id, created_at) VALUES (?, ?)",
+                bind: [item.oldRow.id, currDateTime],
+                autoClose: false
+            });
+        }
+    } catch(err) {
+        console.error(err);
+    }
+};
+
+const closeAlarmState = async (portData) => {
+    const currDateTime = toDatetimeString(new Date());
+    const portIds = portData.map(item => item.id);
+
+    const db = new Database();
+    await db.runQuery({
+        query: "UPDATE rtu_port_status SET rtu_status=?, port_status=?, state=0, end_at=? WHERE id IN (?)",
+        bind: ["normal", "normal", currDateTime, portIds]
+    });
+};
+
+module.exports = { writeNewPortAlarm, openAlarmState, closeAlarmState };

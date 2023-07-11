@@ -1,42 +1,70 @@
+const isRawMatch = (dbItem, rawItem) => {
+    if(dbItem.rtu_code != rawItem.rtu_sname)
+        return false;
+    if(dbItem.port != rawItem.no_port)
+        return false;
+    if(dbItem.unit != rawItem.units)
+        return false;
+    return true;
+};
+
 module.exports = (rawData, dataDbPort) => {
     const newPorts = [];
     const openedAlarm = [];
     const closedAlarm = [];
 
-    rawData.forEach(item => {
-        const dbItem = dataDbPort.find(portItem => {
-            if(portItem.rtu_code != item.rtu_sname)
-                return false;
-            if(portItem.port != item.no_port)
-                return false;
-            if(portItem.unit != item.units)
-                return false;
-            return true;
-        });
-
-        const isSeverityNormal = item.severity.id === 1;
-        const isPortStateOpen = dbItem ? Boolean(dbItem.state) : false;
-
-        if(!dbItem) {
-            
-            newPorts.push(item);
-
-        } else if(!isPortStateOpen && !isSeverityNormal) {
-            
+    dataDbPort.forEach(item => {
+        const currItem = rawData.find(rawItem => isRawMatch(item, rawItem));
+        if(!currItem && item.state == 1) {
+            closedAlarm.push(item);
+        } else if(currItem) {
             openedAlarm.push({
-                dataAlarm: item,
-                portStatusId: dbItem.id
+                newRow: currItem,
+                oldRow: item
             });
-        
-        } else if(isPortStateOpen && isSeverityNormal) {
-
-            closedAlarm.push({
-                dataAlarm: item,
-                portStatusId: dbItem.id
-            });
-
         }
     });
+
+    rawData.forEach(item => {
+        const dataDbIndex = dataDbPort.findIndex(dbItem => isRawMatch(dbItem, item));
+        if(dataDbIndex < 0)
+            newPorts.push(item);
+    })
+    
+    // rawData.forEach(item => {
+    //     const dbItem = dataDbPort.find(portItem => {
+    //         if(portItem.rtu_code != item.rtu_sname)
+    //             return false;
+    //         if(portItem.port != item.no_port)
+    //             return false;
+    //         if(portItem.unit != item.units)
+    //             return false;
+    //         return true;
+    //     });
+
+    //     const isSeverityNormal = item.severity.id === 1;
+    //     const isPortStateOpen = dbItem ? Boolean(dbItem.state) : false;
+
+    //     if(!dbItem) {
+            
+    //         newPorts.push(item);
+
+    //     } else if(!isPortStateOpen && !isSeverityNormal) {
+            
+    //         openedAlarm.push({
+    //             dataAlarm: item,
+    //             portStatusId: dbItem.id
+    //         });
+        
+    //     } else if(isPortStateOpen && isSeverityNormal) {
+
+    //         closedAlarm.push({
+    //             dataAlarm: item,
+    //             portStatusId: dbItem.id
+    //         });
+
+    //     }
+    // });
 
     return { newPorts, openedAlarm, closedAlarm };
 };

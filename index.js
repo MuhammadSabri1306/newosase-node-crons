@@ -1,24 +1,16 @@
 const cron = require("node-cron");
-const { main, syncOpnimusLocation, telegramAlertV2 } = require("./src/index");
+const { syncOpnimusLocation, telegramAlertV3 } = require("./src/index");
 const { toDatetimeString } = require("./src/helpers/date");
 
 /*
- * Main Alarm
+ * Main Alert V3
  * Runs every 2 minutes
  */
 cron.schedule("*/2 * * * *", () => {
     console.log("\n\nNewosase RTU's Alert (run on every 2 minute)");
     console.log(`Start at: ${ toDatetimeString(new Date()) }`);
-    main().then(() =>  {
-        console.log(`Finish at: ${ toDatetimeString(new Date()) }`);
-    });
+    telegramAlertV3();
 });
-
-/*
- * Check Alarm Stack and Send Alert
- * Running all time without cron
- */
-telegramAlertV2();
 
 /*
  * Newosase RTU list watcher

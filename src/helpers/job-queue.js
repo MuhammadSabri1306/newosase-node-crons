@@ -3,9 +3,10 @@ const path = require("path");
 
 class JobQueue
 {
-    constructor() {
+    constructor(slotNum) {
         this.workers = [];
         this.completeWorkers = [];
+        this.slotNum = slotNum;
         this.running = 0;
 
         this.delayTime = 0;
@@ -21,7 +22,7 @@ class JobQueue
     }
   
     run() {
-        for (let i = 0; i < Math.min(this.workers.length, 10); i++) {
+        for (let i = 0; i < Math.min(this.workers.length, this.slotNum); i++) {
             this.executeNextJob();
         }
     }
@@ -31,7 +32,7 @@ class JobQueue
     }
   
     executeNextJob() {
-        if (this.workers.length === 0) {
+        if (!this.workers || this.workers.length === 0) {
             if (this.running === 0) {
                 console.log("All jobs completed.");
             }
@@ -40,16 +41,17 @@ class JobQueue
 
         const currWorker = this.workers.shift();
         const worker = new Worker(currWorker.path, {
-            workerData: {
-                data: currWorker.data,
-                params: currWorker.params
-            }
+            workerData: currWorker.data
         });
 
         worker.on("message", () => {
             this.running--;
             this.completeWorkers.push(currWorker);
-            this.executeNextJob();
+            
+            if(this.delayTime)
+                setTimeout(this.executeNextJob, this.delayTime);
+            else
+                this.executeNextJob();
         });
 
         this.running++;

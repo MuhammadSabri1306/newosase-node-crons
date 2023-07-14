@@ -41,6 +41,7 @@ class SelectQueryBuilder
         this.joinTables = [];
         this.fields = [];
         this.whereQueries = [];
+        this.groupField = [];
         this.bind = [];
     }
 
@@ -59,6 +60,10 @@ class SelectQueryBuilder
             this.bind.push(bindValue);
     }
 
+    groupBy(fieldName) {
+        this.groupField.push(fieldName);
+    }
+
     getQuery() {
         const queryFields = this.fields.length > 0 ? this.fields.join(", ") : `${ this.tableName }.*`;
         let query = `SELECT ${ queryFields } FROM ${ this.tableName }`;
@@ -71,6 +76,11 @@ class SelectQueryBuilder
         if(this.whereQueries.length > 0) {
             const queryWhere = this.whereQueries.join(" ");
             query += " WHERE " + queryWhere;
+        }
+        
+        if(this.groupField.length > 0) {
+            const queryGroup = this.groupField.join(", ");
+            query += " GROUP BY " + queryGroup;
         }
 
         return query;

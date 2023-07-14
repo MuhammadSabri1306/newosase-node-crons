@@ -28,6 +28,18 @@ module.exports = {
             password: "@Dm1ndb#2020",
             database: "juan5684_opnimus_new"
         }
+    },
+
+    alert: {
+        params: {
+            regionalId: 2,
+            witelId: 43
+        },
+        workerLevel: "rtu", // rtu || witel || regional
+        workerSlot: 10,
+        delayTime: 1000,
+        maxSend: 5,
+        maxRetry: 3
     }
     
 };

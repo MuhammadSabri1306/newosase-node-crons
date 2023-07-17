@@ -30,7 +30,7 @@ module.exports = async (argKey = null, argVal = null) => {
         workerQueue.setDelay(config.alert.delayTime);
         
         rtuList.forEach(data => {
-            workerQueue.registerWorker("sync-rtu-port-status-v2", {
+            workerQueue.registerWorker("alert", {
                 level: params.level,
                 workData: data
             });

@@ -1,6 +1,5 @@
 const { Telegraf } = require("telegraf");
 const config = require("../config");
-const ProcessSlot = require("./process-slot");
 const updatePortMessage = require("./db-query/update-port-message");
 const storeAlertError = require("./db-query/store-alert-error");
 

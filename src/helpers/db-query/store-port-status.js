@@ -18,7 +18,6 @@ module.exports = async (alarmList) => {
     queryDbPort.addFields('start_at');
     queryDbPort.addFields('state');
     queryDbPort.addFields('location');
-    queryDbPort.addFields('regional_id');
     
     const currDateTime = toDatetimeString(new Date());
     let openedAlarm = 0;
@@ -27,7 +26,7 @@ module.exports = async (alarmList) => {
         if(!isSeverityNormal)
             openedAlarm++;
         queryDbPort.appendRow([item.rtu_sname, item.no_port, item.port_name, (item.value || 0), item.units, item.rtu_status,
-            item.severity.name, currDateTime, !isSeverityNormal, item.location, item.regional_id]);
+            item.severity.name, currDateTime, !isSeverityNormal, item.location]);
     });
 
     const resultDbPort = await db.runQuery({

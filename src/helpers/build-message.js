@@ -56,7 +56,7 @@ module.exports = (data) => {
 
     const title = getAlertTitle(data);
     const descr = getAlertDescr(data);
-    const datetime = extractDate(new Date(item.created_at));
+    const datetime = extractDate(new Date(data.created_at));
     const datetimeStr = `${ datetime.day }-${ datetime.month }-${ datetime.year } ${ datetime.hours }:${ datetime.minutes } WIB`;
     const valueText = data.port_value ? `${ toFixedNumber(data.port_value) } ${ data.port_unit }` : "-";
 

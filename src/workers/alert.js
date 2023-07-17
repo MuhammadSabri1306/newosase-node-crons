@@ -64,25 +64,7 @@ const buildAlert = async () => {
 
             }
 
-            const datetime = extractDate(new Date(item.created_at));
-            const timestamp = `${ datetime.day }-${ datetime.month }-${ datetime.year } ${ datetime.hours }:${ datetime.minutes } WIB`;
-            
-            const message = buildMessage({
-                title,
-                description,
-                timestamp,
-                regional: item.divre_name,
-                witel: item.witel_name,
-                location: item.location_name,
-                rtuCode: item.rtu_code,
-                nodeName: item.rtu_name,
-                siteType: null,
-                portName: item.port_name,
-                port: `${ item.port } ${ item.port_name }`,
-                value: `${ item.port_value ? toFixedNumber(item.port_value) : null } ${ item.port_unit }`,
-                status: item.port_status
-            });
-
+            const message = buildMessage(item);
             telegramUsers.forEach(user => {
                 const alertItem = { user, message, messageId: item.id };
                 alerts.push(alertItem);
@@ -106,13 +88,13 @@ const alert = async () => {
         const portStatusNew = await getNewosasePortStatus(apiPortStatusParams);
         
         const { newPorts, openedAlarm, closedAlarm } = defineAlarm(portStatusNew, portStatusOld);
-        // console.log({
-        //     portStatusOld: portStatusOld.length,
-        //     portStatusNew: portStatusNew.length,
-        //     newPorts: newPorts.length,
-        //     openedAlarm: openedAlarm.length,
-        //     closedAlarm: closedAlarm.length
-        // });
+        console.log({
+            portStatusOld: portStatusOld.length,
+            portStatusNew: portStatusNew.length,
+            newPorts: newPorts.length,
+            openedAlarm: openedAlarm.length,
+            closedAlarm: closedAlarm.length
+        });
 
         if(newPorts.length > 0) {
             // write new alarm

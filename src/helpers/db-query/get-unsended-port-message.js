@@ -29,7 +29,7 @@ module.exports = async (rtuParams) => {
     queryDbMsg.addFields("reg.divre_code");
     queryDbMsg.addFields("reg.name AS divre_name");
 
-    queryDbMsg.where("sended!=?", "success");
+    queryDbMsg.where("sended==?", "unsended");
     for(let key in rtuParams) {
         queryDbMsg.where(`rtu.${ key }=?`, rtuParams[key]);
     }

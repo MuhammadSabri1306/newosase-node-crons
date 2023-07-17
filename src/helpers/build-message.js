@@ -1,78 +1,89 @@
-const toCodeFormat = text => "```" + text + "```";
+const { extractDate } = require("./date");
+const { toFixedNumber } = require("./number-format");
 
-const newLine = text => "\n" + text;
+class TelMessage
+{
+    constructor(text = null) {
+        this.lines = [];
+        if(text)
+            this.lines.push(text);
+    }
 
-const buildMessage = params => {
-    const data = {
-        title: params.title || "OPNIMUS ALERT",
-        description: params.description || "",
-        timestamp: params.timestamp || "-",
-        regional: params.regional || "-",
-        witel: params.witel || "-",
-        location: params.location || "-",
-        rtuCode: params.rtuCode || "-",
-        nodeName: params.nodeName || "-",
-        siteType: params.siteType || "-",
-        portName: params.portName || "-",
-        port: params.port || "-",
-        value: params.value || "-",
-        status: params.status || "-",
-        pic: Array.isArray(params.pic) ? params.pic
-            : typeof params.pic == "string" ? [params.pic]
-            : []
-    };
+    addLine(text = "") {
+        this.lines.push(text);
+    }
 
-    let message = `⚡️ ${ data.title }⚡️`;
-    message += newLine("Pada " + data.timestamp);
-    message += newLine("");
+    getMessage() {
+        return this.lines.join("\n");
+    }
 
-    let detail = "";
-    detail += newLine("7️⃣ Regional  : " + data.regional);
-    detail += newLine("🏢 Witel     : " + data.witel);
-    detail += newLine("🏬 Lokasi    : " + data.location);
-    detail += newLine("🎛 RTU Name : " + data.rtuCode);
-    detail += newLine("🏪 Node Name : " + data.nodeName);
-    // detail += newLine("🔑 Tipe Site : " + data.siteType);
-    detail += newLine("");
-    detail += newLine("Port Alarm Detail:");
-    detail += newLine("⚠️ Nama Port : " + data.portName);
-    detail += newLine("🔌 Port      : " + data.port);
-    detail += newLine("✴️ Value     : " + data.value);
-    detail += newLine("🌋 Status    : " + data.status);
-    detail += newLine("📅 Waktu     : " + data.timestamp);
-    message += newLine(toCodeFormat(detail));
+    toCodeFormat() {
+        const text = this.getMessage();
+        return "```" + text + "```";
+    }
+}
 
-    message += newLine("");
-    message += newLine("❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.");
-    message += newLine("Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.");
-    message += newLine("#OPNIMUS #PORTALARM #TR7");
+const getAlertTitle = params => {
+    if(params.port_name == "Status PLN")
+        return `⚡️ PLN OFF: ${ params.location_name } (${ params.rtu_code })⚡️`;
+    if(params.port_name == "Status DEG")
+        return `🔆 GENSET ON: ${ params.location_name } (${ params.rtu_code })🔆`;
 
-    return message;
-
+    const portStatus = params.port_status.toUpperCase();
+    if(portStatus == "OFF")
+        return `‼️ ${ params.port_name } ${ portStatus }: ${ params.location_name } (${ params.rtu_code })‼️`;
+    if(portStatus == "CRITICAL")
+        return `❗️ ${ params.port_name } ${ portStatus }: ${ params.location_name } (${ params.rtu_code })❗️`;
+    if(portStatus == "WARNING")
+        return `⚠️ ${ params.port_name } ${ portStatus }: ${ params.location_name } (${ params.rtu_code })⚠️`;
+    if(portStatus == "SENSOR BROKEN")
+        return `❌ ${ params.port_name } ${ portStatus }: ${ params.location_name } (${ params.rtu_code })❌`;
+    
+    return "⚡️ OPNIMUS ALERT ⚡️";
 };
 
-// `⚡️ PLN OFF: MALINO (RTU-MAL)⚡️ 
-// Pada 2023-06-18 03:06:00 WIB 
+const getAlertDescr = params => {
+    if(params.port_name == "Status PLN")
+        return "Terpantau PLN OFF dengan detail sebagai berikut:";
+    if(params.port_name == "Status DEG")
+        return "Terpantau GENSET ON dengan detail sebagai berikut:";
 
-// Terpantau PLN OFF dengan detail sebagai berikut:
-// 7️⃣Regional  : DIVISI TELKOM REGIONAL VII
-// 🏢Witel     : WITEL SULSEL 
-// 🏬Lokasi    : MALINO (KANDATEL GOWA)
-// 🎛Node Name : RTU-MAL (RTU STO MALINO)
-// 🔑Tipe Site : STO
+    const portStatus = params.port_status.toUpperCase();
+    return `Terpantau ${ params.port_name } ${ portStatus } dengan detail sebagai berikut:`;
+};
 
-// Port Alarm Detail:
-// ⚠️Nama Port : STATUS PLN MALINO
-// 🔌Port      : D-01 Status PLN
-// ✴️Value     : 1.00 ON/OFF 
-// 🌋Status    : OFF (0d 0h 4m 0s)
-// 📅Waktu     : 2023-06-18 03:06:00 WIB 
+module.exports = (data) => {
 
-// PIC Lokasi ini adalah:  Hajir Paewai  Arif Firmansyah  Muh Rusli bastian bachtiar Bambang Supriadi Fanur  GuardTR7  Rusman Man Aswar Salam Acho MKS yoyon 
+    const title = getAlertTitle(data);
+    const descr = getAlertDescr(data);
+    const datetime = extractDate(new Date(item.created_at));
+    const datetimeStr = `${ datetime.day }-${ datetime.month }-${ datetime.year } ${ datetime.hours }:${ datetime.minutes } WIB`;
+    const valueText = data.port_value ? `${ toFixedNumber(data.port_value) } ${ data.port_unit }` : "-";
 
-// ❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.
-// Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.
+    const mainMsg = new TelMessage(title);
+    mainMsg.addLine("Pada " + datetimeStr);
+    mainMsg.addLine();
+    mainMsg.addLine(descr);
 
-// #OPNIMUS #PORTALARM #TR7`
-
-module.exports = buildMessage;
+    const detailMsg = new TelMessage();
+    detailMsg.addLine("7️⃣ Regional : " + data.divre_name);
+    detailMsg.addLine("🏢 Witel : " + data.witel_name);
+    detailMsg.addLine("🏬 Lokasi : " + data.location_name);
+    detailMsg.addLine("🎛 RTU Name : " + data.rtu_code);
+    detailMsg.addLine("🏪 Node Name : " + data.rtu_name);
+    detailMsg.addLine();
+    detailMsg.addLine("Port Alarm Detail:");
+    detailMsg.addLine("⚠️ Nama Port : " + data.port_name);
+    detailMsg.addLine("🔌 Port : " + data.port);
+    detailMsg.addLine("✴️ Value : " + valueText);
+    detailMsg.addLine("🌋 Status : " + data.port_status);
+    detailMsg.addLine("📅 Waktu : " + datetimeStr);
+    mainMsg.addLine(detailMsg.toCodeFormat());
+    
+    detailMsg.addLine();
+    mainMsg.addLine("❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.");
+    mainMsg.addLine("Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.");
+    mainMsg.addLine("#OPNIMUS #PORTALARM");
+    
+    return mainMsg.getMessage();
+};

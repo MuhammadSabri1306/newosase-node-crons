@@ -17,7 +17,7 @@ module.exports = (rawData, dataDbPort) => {
         const currItem = rawData.find(rawItem => isRawMatch(item, rawItem));
         if(!currItem && item.state == 1) {
             closedAlarm.push(item);
-        } else if(currItem) {
+        } else if(currItem && item.state != 1) {
             openedAlarm.push({
                 newRow: currItem,
                 oldRow: item

@@ -8,7 +8,7 @@ const storePortStatus = require("../helpers/db-query/store-port-status");
 const storePortMessage = require("../helpers/db-query/store-port-message");
 const closePortStatus = require("../helpers/db-query/close-port-status");
 const getAlertUser = require("../helpers/db-query/get-alert-user");
-const getPortMessage = require("../helpers/db-query/get-port-message");
+const getUnsendedPortMessage = require("../helpers/db-query/get-unsended-port-message");
 const buildMessage = require("../helpers/build-message");
 const { toFixedNumber } = require("../helpers/number-format");
 const { extractDate } = require("../helpers/date");
@@ -44,7 +44,7 @@ const buildAlert = async () => {
 
         const alerts = [];
         const telegramUsers = await getAlertUser();
-        const alertMsg = await getPortMessage(portMsgParams);
+        const alertMsg = await getUnsendedPortMessage(portMsgParams);
 
         alertMsg.forEach(item => {
             // let statusState = null;
@@ -97,7 +97,7 @@ const buildAlert = async () => {
     }
 };
 
-const syncPort = async () => {
+const alert = async () => {
     const queryRtuListParams = getRtuListParams();
     const apiPortStatusParams = getApiPortParams();
     try {
@@ -147,4 +147,4 @@ const syncPort = async () => {
     }
 };
 
-syncPort();
+alert();

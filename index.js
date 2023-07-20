@@ -1,14 +1,14 @@
 const cron = require("node-cron");
 const { syncOpnimusLocation, telegramAlertV3 } = require("./src/index");
-const { toDatetimeString } = require("./src/helpers/date");
+const { logger } = require("./src/helpers/logger");
 
 /*
  * Main Alert V3
  * Runs every 2 minutes
  */
 cron.schedule("*/2 * * * *", () => {
-    console.log("\n\nNewosase RTU's Alert (run on every 2 minute)");
-    console.log(`Start at: ${ toDatetimeString(new Date()) }`);
+    console.log("\n\n");
+    logger.log("Newosase RTU's Alert (run on every 2 minute)");
     telegramAlertV3();
 });
 
@@ -18,11 +18,9 @@ cron.schedule("*/2 * * * *", () => {
  * Runs every 00.00 WIB
  */
 cron.schedule("0 0 * * *", () => {
-    console.log("\n\nWatch Newosase location (run on every 24 o'clock)");
-    console.log(`Start at: ${ toDatetimeString(new Date()) }`);
-    syncOpnimusLocation().then(() =>  {
-        console.log(`Finish at: ${ toDatetimeString(new Date()) }`);
-    });
+    console.log("\n\n");
+    logger.log("Watch Newosase location (run on every 24 o'clock)");
+    syncOpnimusLocation();
 }, {
     timezone: "Asia/Jakarta"
 });

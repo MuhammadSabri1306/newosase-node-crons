@@ -8,10 +8,21 @@ const isRawMatch = (dbItem, rawItem) => {
     return true;
 };
 
+const isExclude = rawItem => {
+    if(!rawItem.port_name)
+        return true;
+    if(!rawItem.no_port)
+        return true;
+    if(rawItem.no_port == "many")
+        return true;
+};
+
 module.exports = (rawData, dataDbPort) => {
     const newPorts = [];
     const openedAlarm = [];
     const closedAlarm = [];
+
+    rawData = rawData.filter(item => !isExclude(item));
 
     dataDbPort.forEach(item => {
         const currItem = rawData.find(rawItem => isRawMatch(item, rawItem));

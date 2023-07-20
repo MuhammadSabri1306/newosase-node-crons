@@ -1,5 +1,7 @@
 const { parentPort, workerData } = require("worker_threads");
 const config = require("../config");
+const { logger } = require("../helpers/logger");
+const updatePortMessage = require("../helpers/db-query/update-port-message");
 
 const getNewosasePortStatus = require("../helpers/newosase/fetch/get-port-status");
 const getPortStatus = require("../helpers/db-query/get-port-status");
@@ -10,11 +12,9 @@ const closePortStatus = require("../helpers/db-query/close-port-status");
 const getAlertUser = require("../helpers/db-query/get-alert-user");
 const getUnsendedPortMessage = require("../helpers/db-query/get-unsended-port-message");
 const buildMessage = require("../helpers/build-message");
-const { toFixedNumber } = require("../helpers/number-format");
-const { extractDate } = require("../helpers/date");
 const sendTelegramAlert = require("../helpers/send-telegram-alert");
 
-const { workData } = workerData; // { level, workData }
+const { workData, jobQueueNumber } = workerData; // { level, workData, jobQueueNumber }
 
 const getRtuListParams = () => {
     const params = {};
@@ -74,12 +74,14 @@ const buildAlert = async () => {
         return alerts;
 
     } catch(err) {
-        console.error(err);
+        logger.error(err);
         return [];
     }
 };
 
 const alert = async () => {
+    logger.log(`Starting telegram-alert-v3 thread, queue: ${ jobQueueNumber }`);
+
     const queryRtuListParams = getRtuListParams();
     const apiPortStatusParams = getApiPortParams();
     try {
@@ -88,9 +90,7 @@ const alert = async () => {
         const portStatusNew = await getNewosasePortStatus(apiPortStatusParams);
         
         const { newPorts, openedAlarm, closedAlarm } = defineAlarm(portStatusNew, portStatusOld);
-        console.log({
-            portStatusOld: portStatusOld.length,
-            portStatusNew: portStatusNew.length,
+        logger.debug({
             newPorts: newPorts.length,
             openedAlarm: openedAlarm.length,
             closedAlarm: closedAlarm.length
@@ -113,18 +113,23 @@ const alert = async () => {
         }
 
         const dataAlert = await buildAlert();
-        // await sendTelegramAlert(dataAlert);
+        if(dataAlert.length > 0)
+            await updatePortMessage(dataAlert.map(item => item.messageId), "sending");
+
         await sendTelegramAlert(dataAlert, () => {
+            logger.log(`Close telegram-alert-v3 thread, queue: ${ jobQueueNumber }`);
+
             parentPort.postMessage({
                 portStatusOld,
                 portStatusNew
             });
+            
             process.exit();
         });
 
 
     } catch(err) {
-        console.error(err);
+        logger.error(err);
         process.exit();
     }
 };

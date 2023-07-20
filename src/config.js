@@ -31,15 +31,17 @@ module.exports = {
     },
 
     alert: {
-        params: {
-            regionalId: 2,
-            witelId: 43
-        },
-        workerLevel: "rtu", // rtu || witel || regional
-        workerSlot: 10,
+        params: {},
+        // params: { regionalId: 2 },
+        // params: { witelId: 43 },
+        workerLevel: "witel", // rtu || witel || regional
+        workerSlot: 20,
         delayTime: 1000,
+        delayMessageTime: 1000,
         maxSend: 5,
         maxRetry: 3
-    }
+    },
+
+    logger: "nohup"
     
 };

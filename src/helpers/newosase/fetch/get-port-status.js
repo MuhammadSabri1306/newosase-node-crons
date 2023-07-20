@@ -1,4 +1,5 @@
 const http = require("../http");
+const { logger } = require("../../logger");
 
 module.exports = async (params) => {
     let data = null;
@@ -7,12 +8,12 @@ module.exports = async (params) => {
         if(response.data && response.data.result)
             data = response.data.result;
         else
-            console.warn(response.data);
+            logger.debug(response.data);
     } catch(err) {
         if (err.toJSON)
-            console.error(err.response.data, err.toJSON());
+            logger.error(err.response.data, err.toJSON());
         else
-            console.error(err);
+            logger.error(err);
     } finally {
         return data ? data.payload : null;
     }

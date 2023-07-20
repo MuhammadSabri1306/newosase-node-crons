@@ -1,4 +1,5 @@
 const Database = require("../newosase/database");
+const { logger } = require("../logger");
 
 module.exports = async (params) => {
     const db = new Database();
@@ -23,7 +24,7 @@ module.exports = async (params) => {
             stm = await db.runQuery({ query, bind });
         return stm.results;
     } catch(err) {
-        console.error(err);
+        logger.error(err);
         return null;
     }
 };

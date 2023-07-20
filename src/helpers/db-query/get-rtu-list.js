@@ -1,6 +1,7 @@
 const config = require("../../config");
 const Database = require("../newosase/database");
 const { SelectQueryBuilder } = require("../mysql-query-builder");
+const { logger } = require("../logger");
 
 module.exports = async (params) => {
     const db = new Database();
@@ -31,6 +32,7 @@ module.exports = async (params) => {
         });
         return results;
     } catch(err) {
+        logger.error(err);
         return [];
     }
 };

@@ -1,7 +1,7 @@
 const config = require("../config");
 const JobQueue = require("../helpers/job-queue");
 const getRtuList = require("../helpers/db-query/get-rtu-list");
-
+const { logger } = require("../helpers/logger");
 
 const defineParams = (argKey, argVal) => {
     let definedConfig = {};
@@ -34,6 +34,13 @@ module.exports = async (argKey = null, argVal = null) => {
                 level: params.level,
                 workData: data
             });
+        });
+
+        workerQueue.onBeforeRun(() => {
+            logger.log("Thread queue started.");
+        });
+        workerQueue.onAfterRun(() => {
+            logger.log("All thread queue completed.");
         });
         
         workerQueue.run();

@@ -58,12 +58,15 @@ module.exports = (data) => {
     const descr = getAlertDescr(data);
     const datetime = extractDate(new Date(data.created_at));
     const datetimeStr = `${ datetime.day }-${ datetime.month }-${ datetime.year } ${ datetime.hours }:${ datetime.minutes } WIB`;
-    const valueText = data.port_value ? `${ toFixedNumber(data.port_value) } ${ data.port_unit }` : "-";
+    let valueText = "-";
+    if(data.port_value !== null && data.port_value !== undefined)
+        valueText = toFixedNumber(data.port_value);
 
     const mainMsg = new TelMessage(title);
     mainMsg.addLine("Pada " + datetimeStr);
     mainMsg.addLine();
     mainMsg.addLine(descr);
+    mainMsg.addLine();
 
     const detailMsg = new TelMessage();
     detailMsg.addLine("7️⃣ Regional : " + data.divre_name);
@@ -80,7 +83,7 @@ module.exports = (data) => {
     detailMsg.addLine("📅 Waktu : " + datetimeStr);
     mainMsg.addLine(detailMsg.toCodeFormat());
     
-    detailMsg.addLine();
+    mainMsg.addLine();
     mainMsg.addLine("❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.");
     mainMsg.addLine("Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.");
     mainMsg.addLine("#OPNIMUS #PORTALARM");

@@ -1,5 +1,6 @@
 const Database = require("../newosase/database");
 const { toDatetimeString } = require("../date");
+const { logger } = require("../logger");
 
 module.exports = async (alarmList) => {
     const currDateTime = toDatetimeString(new Date());
@@ -28,6 +29,6 @@ module.exports = async (alarmList) => {
             });
         }
     } catch(err) {
-        console.error(err);
+        logger.error(err);
     }
 };

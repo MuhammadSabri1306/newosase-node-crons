@@ -1,6 +1,7 @@
 const Database = require("../newosase/database");
 const { InsertQueryBuilder } = require("../mysql-query-builder");
 const { toDatetimeString } = require("../date");
+const { logger } = require("../logger");
 
 module.exports = async (errCode, errDesc, msgId, userId) => {
     const currDateTime = toDatetimeString(new Date());
@@ -20,6 +21,6 @@ module.exports = async (errCode, errDesc, msgId, userId) => {
             bind: queryDbError.getBuiltBindData()
         });
     } catch(err) {
-        console.error(err);
+        logger.error(err);
     }
 };

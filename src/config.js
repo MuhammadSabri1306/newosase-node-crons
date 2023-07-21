@@ -31,8 +31,8 @@ module.exports = {
     },
 
     alert: {
-        params: {},
-        // params: { regionalId: 2 },
+        // params: {},
+        params: { regionalId: 2 },
         // params: { witelId: 43 },
         workerLevel: "witel", // rtu || witel || regional
         workerSlot: 20,

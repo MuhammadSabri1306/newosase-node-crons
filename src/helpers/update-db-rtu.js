@@ -37,11 +37,12 @@ module.exports = async (dataRtu) => {
         const currDateTime = toDatetimeString(new Date());
 
         if(updatedRow.length > 0) {
-            updatedRow.forEach(async (item) => {
-                const { oldData, newData } = item;
+            for(let i=0; i<updatedRow.length; i++) {
+
+                const { oldData, newData } = updatedRow[i];
                 const useIdM = checkLocationIdM(newData.id);
                 let query = "", bind = [];
-
+    
                 if(useIdM) {
                     query = "UPDATE rtu_list SET name=?, sname=?, location_id=?, datel_id=?, witel_id=?, regional_id=?, timestamp=? WHERE id_m=?";
                     bind = [newData.name, newData.sname, newData.location_id, newData.datel_id, newData.witel_id, newData.regional_id, currDateTime, oldData.id_m];
@@ -49,10 +50,12 @@ module.exports = async (dataRtu) => {
                     query = "UPDATE rtu_list SET name=?, sname=?, location_id=?, datel_id=?, witel_id=?, regional_id=?, timestamp=? WHERE id=?";
                     bind = [newData.name, newData.sname, newData.location_id, newData.datel_id, newData.witel_id, newData.regional_id, currDateTime, oldData.id];
                 }
-
+    
                 const autoClose = (newRowWithId.length < 1) && (newRowWithIdM.length < 1);
+                console.log(autoClose);
                 await db.runQuery({ query, bind, autoClose });
-            });
+
+            }
         }
 
         if(newRowWithId.length > 0) {

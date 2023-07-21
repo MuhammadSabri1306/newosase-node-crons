@@ -1,27 +1,6 @@
 const { extractDate } = require("./date");
 const { toFixedNumber } = require("./number-format");
-
-class TelMessage
-{
-    constructor(text = null) {
-        this.lines = [];
-        if(text)
-            this.lines.push(text);
-    }
-
-    addLine(text = "") {
-        this.lines.push(text);
-    }
-
-    getMessage() {
-        return this.lines.join("\n");
-    }
-
-    toCodeFormat() {
-        const text = this.getMessage();
-        return "```" + text + "```";
-    }
-}
+const TelMessage = require("./tel-message");
 
 const getAlertTitle = params => {
     if(params.port_name == "Status PLN")
@@ -44,12 +23,13 @@ const getAlertTitle = params => {
 
 const getAlertDescr = params => {
     if(params.port_name == "Status PLN")
-        return "Terpantau PLN OFF dengan detail sebagai berikut:";
+        return "Terpantau " + TelMessage.toBoldText("PLN OFF") + " dengan detail sebagai berikut:";
     if(params.port_name == "Status DEG")
-        return "Terpantau GENSET ON dengan detail sebagai berikut:";
+        return "Terpantau " + TelMessage.toBoldText("GENSET ON") + " dengan detail sebagai berikut:";
 
     const portStatus = params.port_status.toUpperCase();
-    return `Terpantau ${ params.port_name } ${ portStatus } dengan detail sebagai berikut:`;
+    const alertText = TelMessage.toBoldText(params.port_name + " " + portStatus);
+    return "Terpantau " + alertText + " dengan detail sebagai berikut:";
 };
 
 module.exports = (data) => {
@@ -66,7 +46,6 @@ module.exports = (data) => {
     mainMsg.addLine("Pada " + datetimeStr);
     mainMsg.addLine();
     mainMsg.addLine(descr);
-    mainMsg.addLine();
 
     const detailMsg = new TelMessage();
     detailMsg.addLine("7️⃣ Regional : " + data.divre_name);
@@ -83,7 +62,6 @@ module.exports = (data) => {
     detailMsg.addLine("📅 Waktu : " + datetimeStr);
     mainMsg.addLine(detailMsg.toCodeFormat());
     
-    mainMsg.addLine();
     mainMsg.addLine("❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.");
     mainMsg.addLine("Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.");
     mainMsg.addLine("#OPNIMUS #PORTALARM");

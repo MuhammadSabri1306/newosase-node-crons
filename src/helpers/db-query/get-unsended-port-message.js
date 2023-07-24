@@ -4,9 +4,9 @@ const { logger } = require("../logger");
 
 module.exports = async (rtuParams) => {
     const db = new Database();
-    const queryDbMsg = new SelectQueryBuilder("rtu_port_message AS msg");
+    const queryDbMsg = new SelectQueryBuilder("alert_message AS msg");
     
-    queryDbMsg.join("rtu_port_status AS port", "port.id=msg.status_id");
+    queryDbMsg.join("rtu_port_status AS port", "port.id=msg.port_id");
     queryDbMsg.join("rtu_list AS rtu", "rtu.sname=port.rtu_code");
     queryDbMsg.join("rtu_location AS loc", "loc.id=rtu.location_id");
     queryDbMsg.join("datel", "datel.id=rtu.datel_id");
@@ -14,6 +14,7 @@ module.exports = async (rtuParams) => {
     queryDbMsg.join("regional AS reg", "reg.id=rtu.regional_id");
 
     queryDbMsg.addFields("msg.id");
+    queryDbMsg.addFields("msg.chat_id");
     queryDbMsg.addFields("msg.created_at");
     queryDbMsg.addFields("port.port");
     queryDbMsg.addFields("port.port_name");
@@ -40,7 +41,7 @@ module.exports = async (rtuParams) => {
             query: queryDbMsg.getQuery(),
             bind: queryDbMsg.getBuiltBindData()
         });
-
+        
         return results;
     } catch(err) {
         logger.error(err);

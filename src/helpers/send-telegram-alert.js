@@ -22,7 +22,7 @@ module.exports = async (alerts, onFinish) => {
         const currAlert = alerts[i];
         try {
 
-            await bot.telegram.sendMessage(currAlert.alert.chat_id, currAlert.message, { parse_mode: "Markdown" });
+            const res = await bot.telegram.sendMessage(currAlert.alert.chat_id, currAlert.message, { parse_mode: "Markdown" });
             await updatePortMessage(currAlert.alert.id, "success");
 
             retryCount = 0;
@@ -60,7 +60,8 @@ module.exports = async (alerts, onFinish) => {
                     logger.error(`desc: ${ err.description }`);
 
                 await updatePortMessage(currAlert.alert.id, "unsended");
-                await storeAlertError(err.code, err.description, currAlert.alert.id, currAlert.user.chat_id);
+                if(err.code && err.description)
+                    await storeAlertError(err.code, err.description, currAlert.alert.id, currAlert.user.chat_id);
                 retryCount = 0;
                 i++;
                 

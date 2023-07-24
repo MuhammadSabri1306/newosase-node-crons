@@ -9,8 +9,6 @@ const getNewosasePortStatus = require("../helpers/newosase/fetch/get-port-status
 const getPortStatus = require("../helpers/db-query/get-port-status");
 const defineAlarm = require("../helpers/define-alarm");
 const storePortStatus = require("../helpers/db-query/store-port-status");
-const closePortStatus = require("../helpers/db-query/close-port-status");
-const getAlertUser = require("../helpers/db-query/get-alert-user");
 const getUnsendedPortMessage = require("../helpers/db-query/get-unsended-port-message");
 const buildMessage = require("../helpers/build-message");
 const sendTelegramAlert = require("../helpers/send-telegram-alert");
@@ -46,7 +44,7 @@ const getApiPortParams = () => {
 const buildAlert = async () => {
     const portMsgParams = getRtuListParams();
     try {
-
+        
         const alertMsg = await getUnsendedPortMessage(portMsgParams);
         const alerts = alertMsg.map(item => {
             const message = buildMessage(item);
@@ -81,14 +79,12 @@ const alert = async () => {
         if(newPorts.length > 0) {
             // write new alert port
             const newAlertPortId = await storePortStatus(newPorts);
-            openPortId = [...openPortId, ...newAlertPortId];
+            openPortId = newAlertPortId;
         }
 
         const currDate = new Date();
         if(openedAlarm.length > 0) {
             // open state in rtu port status and write new rtu port message
-            const openAlertPortId = [];
-
             for(let i=0; i<openedAlarm.length; i++) {
                 const currPortId = openedAlarm[i].oldRow.id;
                 const isPortOpened = await updatePortStatus(currPortId, {
@@ -100,15 +96,16 @@ const alert = async () => {
                 });
 
                 if(isPortOpened)
-                    openAlertPortId.push(currPortId);
+                    openPortId.push(currPortId);
             }
-
-            openPortId = [...openPortId, ...openAlertPortId];
         }
 
         if(openPortId.length > 0) {
-
+            
+            logger.log("Write messages stack, queue: "+jobQueueNumber);
             await writeMessageStack(openPortId, workData.regional_id, workData.witel_id, jobQueueNumber);
+            logger.log("Done write messages stack, queue: "+jobQueueNumber);
+
             // await storePortMessage(openedAlarm);
         }
         

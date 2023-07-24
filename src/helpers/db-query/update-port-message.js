@@ -7,14 +7,14 @@ module.exports = async (id, status) => {
         if(Array.isArray(id)) {
 
             await db.runQuery({
-                query: "UPDATE rtu_port_message SET status=? WHERE id IN (?)",
+                query: "UPDATE alert_message SET status=? WHERE id IN (?)",
                 bind: [status, id]
             });
 
         } else {
 
             await db.runQuery({
-                query: "UPDATE rtu_port_message SET status=? WHERE id=?",
+                query: "UPDATE alert_message SET status=? WHERE id=?",
                 bind: [status, id]
             });
 

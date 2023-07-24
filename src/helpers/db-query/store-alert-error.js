@@ -16,7 +16,7 @@ module.exports = async (errCode, errDesc, msgId, chatId) => {
     queryDbError.appendRow([errCode, errDesc, msgId, chatId, currDateTime]);
 
     try {
-        db.runQuery({
+        await db.runQuery({
             query: queryDbError.getQuery(),
             bind: queryDbError.getBuiltBindData()
         });

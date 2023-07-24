@@ -21,6 +21,7 @@ const errorLog = (...statements) => {
 
     const outputStr = buildOutput(statements);
     console.error(outputStr);
+    console.error(statements);
 };
 
 const debugLog = obj => {

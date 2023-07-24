@@ -35,7 +35,7 @@ class InsertQueryBuilder
 
     buildInsertedId(insertId, affectedRows) {
         const result = [];
-        for(let id=insertId; id<(insertId + affectedRows); i++) {
+        for(let id=insertId; id<(insertId + affectedRows); id++) {
             result.push(id);
         }
         return result;
@@ -103,8 +103,9 @@ class UpdateQueryBuilder
 {
     constructor(tableName) {
         this.tableName = tableName;
-        this.entries = {};
+        this.entries = [];
         this.whereQueries = [];
+        this.bind = [];
     }
 
     setValue(name, value) {

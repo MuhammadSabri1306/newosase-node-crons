@@ -8,7 +8,7 @@ module.exports = async (portId, chatId) => {
 
     try {
         await db.runQuery({
-            query: "INSERT INTO rtu_port_message (port_id, chat_id, created_at) VALUES (?, ?, ?)",
+            query: "INSERT INTO alert_message (port_id, chat_id, created_at) VALUES (?, ?, ?)",
             bind: [portId, chatId, currDateTime],
             autoClose: false
         });

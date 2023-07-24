@@ -6,9 +6,9 @@ module.exports = async (id) => {
     let query = "SELECT port.*, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id FROM rtu_port_status AS port JOIN rtu_list AS rtu ON rtu.sname=port.rtu_code";
     
     if(Array.isArray(id))
-        query += " WHERE id IN (?)";
+        query += " WHERE port.id IN (?)";
     else
-        query += " WHERE id=?";
+        query += " WHERE port.id=?";
     try {
         
         const { results } = await db.runQuery({ query, bind: [id] });

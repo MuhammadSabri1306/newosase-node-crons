@@ -8,8 +8,8 @@ const readAlert = async (regionalId) => {
     const db = new Database();
     try {
 
-        const queryDbMsg = new SelectQueryBuilder("rtu_port_message AS msg");
-        queryDbMsg.join("rtu_port_status AS port", "port.id=msg.status_id");
+        const queryDbMsg = new SelectQueryBuilder("alert_message AS msg");
+        queryDbMsg.join("rtu_port_status AS port", "port.id=msg.port_id");
         queryDbMsg.join("rtu_list AS rtu", "rtu.sname=port.rtu_code");
         queryDbMsg.join("rtu_location AS loc", "loc.id=rtu.location_id");
         queryDbMsg.join("datel", "datel.id=rtu.datel_id");

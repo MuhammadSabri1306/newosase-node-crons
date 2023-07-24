@@ -4,11 +4,11 @@ const { logger } = require("./src/helpers/logger");
 
 /*
  * Main Alert V3
- * Runs every 2 minutes
+ * Runs every 1 minutes
  */
-cron.schedule("*/2 * * * *", () => {
+cron.schedule("* * * * *", () => {
     console.log("\n\n");
-    logger.log("Newosase RTU's Alert (run on every 2 minute)");
+    logger.log("Newosase RTU's Alert (run on every minute)");
     telegramAlertV3();
 });
 

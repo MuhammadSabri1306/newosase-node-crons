@@ -35,32 +35,12 @@ module.exports = async (alarmList) => {
             bind: queryDbPort.getBuiltBindData(),
             autoClose: false
         });
-    
-        if(openedAlarm < 1)
-            return;
-        let results = resultDbPort.results;
-    
-        const queryDbMsg = new InsertQueryBuilder("rtu_port_message");
-        queryDbMsg.addFields("status_id");
-        queryDbMsg.addFields("created_at");
-    
-        let portStatusId = results.insertId;
-        const maxPortStatusId = results.insertId + results.affectedRows;
-        alarmList.forEach(item => {
-            if(portStatusId >= maxPortStatusId)
-                return;
-            queryDbMsg.appendRow([portStatusId, currDateTime]);
-            portStatusId++;
-        });
 
-        await db.runQuery({
-            query: queryDbMsg.getQuery(),
-            bind: queryDbMsg.getBuiltBindData(),
-            autoClose: false
-        });
+        return queryDbPort.buildInsertedId(resultDbPort.results.insertId, resultDbPort.results.affectedRows);
 
     } catch(err) {
         logger.error(err);
+        return [];
     }
 
 };

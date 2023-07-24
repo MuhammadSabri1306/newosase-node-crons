@@ -2,7 +2,8 @@ const path = require("path");
 
 module.exports = {
 
-    botToken: "6094309871:AAGM-ZsoaJqZC4RHjyEdVLm3mSSOwUjPf8E",
+    // botToken: "6094309871:AAGM-ZsoaJqZC4RHjyEdVLm3mSSOwUjPf8E",
+    botToken: "5842271260:AAFhA-G7SK4_fWcxAOLLZQ8rdFnimPPBzHA",
 
     baseUrl: "https://newosase.telkom.co.id/api/v1",
 

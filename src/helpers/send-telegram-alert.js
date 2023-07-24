@@ -22,10 +22,8 @@ module.exports = async (alerts, onFinish) => {
         const currAlert = alerts[i];
         try {
 
-            // "Status sending execution moved before this module running."
-            // await updatePortMessage(currAlert.messageId, "sending");
-            await bot.telegram.sendMessage(currAlert.user.chat_id, currAlert.message, { parse_mode: "Markdown" });
-            await updatePortMessage(currAlert.messageId, "success");
+            await bot.telegram.sendMessage(currAlert.alert.chat_id, currAlert.message, { parse_mode: "Markdown" });
+            await updatePortMessage(currAlert.alert.id, "success");
 
             retryCount = 0;
             i++;
@@ -61,8 +59,8 @@ module.exports = async (alerts, onFinish) => {
                 if(err.description)
                     logger.error(`desc: ${ err.description }`);
 
-                await updatePortMessage(currAlert.messageId, "unsended");
-                await storeAlertError(err.code, err.description, currAlert.messageId, currAlert.user.id);
+                await updatePortMessage(currAlert.alert.id, "unsended");
+                await storeAlertError(err.code, err.description, currAlert.alert.id, currAlert.user.chat_id);
                 retryCount = 0;
                 i++;
                 

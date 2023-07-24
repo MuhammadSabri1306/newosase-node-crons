@@ -3,7 +3,7 @@ const { logger } = require("../logger");
 
 module.exports = async (params) => {
     const db = new Database();
-    let query = "SELECT port.* FROM `rtu_port_status` AS port JOIN rtu_list AS rtu ON rtu.sname=port.rtu_code";
+    let query = "SELECT port.*, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id FROM rtu_port_status AS port JOIN rtu_list AS rtu ON rtu.sname=port.rtu_code";
     const whereStm = [];
     const bind = [];
 

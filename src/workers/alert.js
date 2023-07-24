@@ -2,12 +2,13 @@ const { parentPort, workerData } = require("worker_threads");
 const config = require("../config");
 const { logger } = require("../helpers/logger");
 const updatePortMessage = require("../helpers/db-query/update-port-message");
+const updatePortStatus = require("../helpers/db-query/update-port-status");
+const writeMessageStack = require("../helpers/write-message-stack");
 
 const getNewosasePortStatus = require("../helpers/newosase/fetch/get-port-status");
 const getPortStatus = require("../helpers/db-query/get-port-status");
 const defineAlarm = require("../helpers/define-alarm");
 const storePortStatus = require("../helpers/db-query/store-port-status");
-const storePortMessage = require("../helpers/db-query/store-port-message");
 const closePortStatus = require("../helpers/db-query/close-port-status");
 const getAlertUser = require("../helpers/db-query/get-alert-user");
 const getUnsendedPortMessage = require("../helpers/db-query/get-unsended-port-message");
@@ -17,6 +18,8 @@ const sendTelegramAlert = require("../helpers/send-telegram-alert");
 const { workData, jobQueueNumber } = workerData; // { level, workData, jobQueueNumber }
 
 const getRtuListParams = () => {
+    return { witel_id: workData.witel_id };
+
     const params = {};
     if(config.alert.workerLevel == "rtu")
         params.sname = workData.rtu_sname;
@@ -28,6 +31,8 @@ const getRtuListParams = () => {
 };
 
 const getApiPortParams = () => {
+    return { isAlert: 1, witelId: workData.witel_id };
+
     const params = { isAlert: 1 };
     if(config.alert.workerLevel == "rtu")
         params.searchRtuSname = workData.rtu_sname;
@@ -42,35 +47,11 @@ const buildAlert = async () => {
     const portMsgParams = getRtuListParams();
     try {
 
-        const alerts = [];
-        const telegramUsers = await getAlertUser();
         const alertMsg = await getUnsendedPortMessage(portMsgParams);
-
-        alertMsg.forEach(item => {
-            // let statusState = null;
-            let title = null, description = null;
-
-            if(item.port_name == "Status DEG" && item.port_value == 1){
-                
-                // statusState = "GENSET ON";
-                title = `🔆 GENSET ON: ${ item.location_name } (${ item.rtu_code })🔆`;
-                description = "Terpantau GENSET ON dengan detail sebagai berikut:";
-
-            } else if(item.port_name == "Status PLN" && item.port_value == 1) {
-                
-                // statusState = "PLN OFF";
-                title = `⚡️ PLN OFF: ${ item.location_name } (${ item.rtu_code })⚡️`;
-                description = "Terpantau PLN OFF dengan detail sebagai berikut:";
-
-            }
-
+        const alerts = alertMsg.map(item => {
             const message = buildMessage(item);
-            telegramUsers.forEach(user => {
-                const alertItem = { user, message, messageId: item.id };
-                alerts.push(alertItem);
-            });
+            return { alert: item, message };
         });
-
         return alerts;
 
     } catch(err) {
@@ -96,25 +77,56 @@ const alert = async () => {
             closedAlarm: closedAlarm.length
         });
 
+        let openPortId = [];
         if(newPorts.length > 0) {
-            // write new alarm
-            await storePortStatus(newPorts);
+            // write new alert port
+            const newAlertPortId = await storePortStatus(newPorts);
+            openPortId = [...openPortId, ...newAlertPortId];
         }
 
+        const currDate = new Date();
         if(openedAlarm.length > 0) {
             // open state in rtu port status and write new rtu port message
-            // await alarmDb.writeNewMessage(openedAlarm);
-            await storePortMessage(openedAlarm);
+            const openAlertPortId = [];
+
+            for(let i=0; i<openedAlarm.length; i++) {
+                const currPortId = openedAlarm[i].oldRow.id;
+                const isPortOpened = await updatePortStatus(currPortId, {
+                    value: openedAlarm[i].newRow.value,
+                    rtu_status: openedAlarm[i].newRow.rtu_status,
+                    port_status: openedAlarm[i].newRow.severity.name,
+                    state: 1,
+                    start_at: currDate
+                });
+
+                if(isPortOpened)
+                    openAlertPortId.push(currPortId);
+            }
+
+            openPortId = [...openPortId, ...openAlertPortId];
         }
 
+        if(openPortId.length > 0) {
+
+            await writeMessageStack(openPortId, workData.regional_id, workData.witel_id, jobQueueNumber);
+            // await storePortMessage(openedAlarm);
+        }
+        
         if(closedAlarm.length > 0) {
             // close state in rtu port status
-            await closePortStatus(closedAlarm);
+            const closedAlarmIds = closedAlarm.map(item => item.id);
+            await updatePortStatus(closedAlarmIds, {
+                rtu_status: "normal",
+                port_status: "normal",
+                state: 0,
+                start_at: currDate
+            });
+            // await closePortStatus(closedAlarm);
         }
 
         const dataAlert = await buildAlert();
         if(dataAlert.length > 0)
-            await updatePortMessage(dataAlert.map(item => item.messageId), "sending");
+            await updatePortMessage(dataAlert.map(item => item.alert.id), "sending");
 
         await sendTelegramAlert(dataAlert, () => {
             logger.log(`Close telegram-alert-v3 thread, queue: ${ jobQueueNumber }`);

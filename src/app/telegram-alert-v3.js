@@ -22,14 +22,15 @@ const defineParams = (argKey, argVal) => {
 };
 
 module.exports = async (argKey = null, argVal = null) => {
-    const params = defineParams(argKey, argVal);
+    // const params = defineParams(argKey, argVal);
+    const params = { level: null }; // nasional
     try {
 
-        const rtuList = await getRtuList(params);
+        const witelList = await getRtuList(params); // group by witel
         const workerQueue = new JobQueue(config.alert.workerSlot);
         workerQueue.setDelay(config.alert.delayTime);
         
-        rtuList.forEach(data => {
+        witelList.forEach(data => {
             workerQueue.registerWorker("alert", {
                 level: params.level,
                 workData: data

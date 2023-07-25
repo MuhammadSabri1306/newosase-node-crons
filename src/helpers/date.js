@@ -1,4 +1,4 @@
-const isDateObject = dateObj => typeof dateObj.getFullYear === "function";
+const isDateObject = dateObj => dateObj && typeof dateObj.getFullYear === "function";
 
 const extractDate = dateObj => {
     if(!isDateObject(dateObj))

@@ -70,7 +70,7 @@ module.exports = (data) => {
     detailMsg.addLine(tregIcon + " Regional  : " + data.divre_name);
     detailMsg.addLine("🏢 Witel     : " + data.witel_name);
     detailMsg.addLine("🏬 Lokasi    : " + data.location_name);
-    detailMsg.addLine("🎛 RTU Name   : " + data.rtu_code);
+    detailMsg.addLine("🎛 RTU Name  : " + data.rtu_code);
     detailMsg.addLine("🏪 Node Name : " + data.rtu_name);
     detailMsg.addLine();
     detailMsg.addLine("Port Alarm Detail:");

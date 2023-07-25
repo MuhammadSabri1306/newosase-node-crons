@@ -21,7 +21,8 @@ const errorLog = (...statements) => {
 
     const outputStr = buildOutput(statements);
     console.error(outputStr);
-    console.error(statements);
+    if(statements.length > 1)
+        console.error(statements[1]);
 };
 
 const debugLog = obj => {

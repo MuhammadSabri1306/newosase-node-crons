@@ -1,4 +1,5 @@
-const createWorker = require("../helpers/create-worker");
+const { logger } = require("../helpers/logger");
+const JobQueue = require("../helpers/job-queue");
 const getNewosaseLocation = require("../helpers/get-newosase-location");
 
 module.exports = async () => {
@@ -6,6 +7,8 @@ module.exports = async () => {
     try {
         
         const dataLocations = await getNewosaseLocation();
+        const workerQueue = new JobQueue(2);
+        workerQueue.setDelay(1000);
 
         // Worker Witel
         // await createWorker("sync opnimus witel", "sync-opnimus-witel", dataLocations);
@@ -14,10 +17,16 @@ module.exports = async () => {
         // await createWorker("sync opnimus datel", "sync-opnimus-datel", dataLocations);
         
         // Worker Location
-        await createWorker("sync opnimus location", "sync-opnimus-location", dataLocations);
+        workerQueue.registerWorker("sync-opnimus-location", { dataLocations });
+        // await createWorker("sync opnimus location", "sync-opnimus-location", dataLocations);
         
         // Worker RTU
-        await createWorker("sync opnimus RTU", "sync-opnimus-rtu", dataLocations);
+        workerQueue.registerWorker("sync-opnimus-rtu", { dataLocations });
+        // await createWorker("sync opnimus RTU", "sync-opnimus-rtu", dataLocations);
+
+        workerQueue.onBeforeRun(() => logger.log("Start to sync opnimus location."));
+        workerQueue.onAfterRun(() => logger.log("Finish sync opnimus location."));
+        workerQueue.run();
 
     } catch(err) {
         console.error(err);

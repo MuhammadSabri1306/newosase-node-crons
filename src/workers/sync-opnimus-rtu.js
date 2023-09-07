@@ -1,8 +1,9 @@
 const { parentPort, workerData } = require("worker_threads");
 const updateDbRtu = require("../helpers/update-db-rtu");
+const { logger } = require("../helpers/logger");
 
-const opnimusLocations = workerData;
-const formattedData = opnimusLocations.reduce((temp, location) => {
+const { dataLocations, jobQueueNumber } = workerData;
+const formattedData = dataLocations.reduce((temp, location) => {
 
     location.rtus.forEach(rtuItem => {
         if(temp.existsKey.indexOf(rtuItem.id) < 0) {
@@ -23,9 +24,16 @@ const formattedData = opnimusLocations.reduce((temp, location) => {
 
 }, { rtu: [], existsKey: [] });
 
-updateDbRtu(formattedData.rtu)
-    .then(() => {
+const run = async () => {
+    logger.log(`Starting sync-opnimus-location:rtu thread, queue: ${ jobQueueNumber }`);
+    try {
+        await updateDbRtu(formattedData.rtu);
         parentPort.postMessage(true);
-    })
-    .catch(err => console.error(err))
-    .finally(() => process.exit());
+        process.exit();
+    } catch(err) {
+        logger.error(err);
+        process.exit();
+    }
+};
+
+run();

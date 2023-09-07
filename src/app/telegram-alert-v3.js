@@ -37,16 +37,11 @@ module.exports = async (argKey = null, argVal = null) => {
             });
         });
 
-        workerQueue.onBeforeRun(() => {
-            logger.log("Thread queue started.");
-        });
-        workerQueue.onAfterRun(() => {
-            logger.log("All thread queue completed.");
-        });
-        
+        workerQueue.onBeforeRun(() => logger.log("Thread queue started."));
+        workerQueue.onAfterRun(() => logger.log("All thread queue completed."));
         workerQueue.run();
 
     } catch(err) {
-        console.error(err);
+        logger.error(err);
     }
 };

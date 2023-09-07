@@ -1,6 +1,7 @@
 const Database = require("./newosase/database");
 const { toDatetimeString } = require("./date");
 const { InsertQueryBuilder } = require("./mysql-query-builder");
+const { logger } = require("./logger");
 
 const checkLocationIdM = id => id.toString().search(/[^0-9]/) >= 0;
 
@@ -35,6 +36,12 @@ module.exports = async (dataLocation) => {
         });
 
         const currDateTime = toDatetimeString(new Date());
+        logger.debug({
+            level: "Location",
+            updatedRow: updatedRow.length,
+            newRowWithId: newRowWithId.length,
+            newRowWithIdM: newRowWithIdM.length
+        });
 
         if(updatedRow.length > 0) {
             updatedRow.forEach(async (item) => {
@@ -91,6 +98,6 @@ module.exports = async (dataLocation) => {
         }
 
     } catch(err) {
-        console.error(err);
+        logger.error(err);
     }
 };

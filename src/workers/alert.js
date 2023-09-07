@@ -116,7 +116,7 @@ const alert = async () => {
                 rtu_status: "normal",
                 port_status: "normal",
                 state: 0,
-                start_at: currDate
+                end_at: currDate
             });
             // await closePortStatus(closedAlarm);
         }

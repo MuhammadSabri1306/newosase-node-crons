@@ -1,6 +1,7 @@
 const Database = require("./newosase/database");
 const { toDatetimeString } = require("./date");
 const { InsertQueryBuilder } = require("./mysql-query-builder");
+const { logger } = require("./logger");
 
 const checkLocationIdM = id => id.toString().search(/[^0-9]/) >= 0;
 
@@ -33,6 +34,12 @@ module.exports = async (dataRtu) => {
                 newRowWithId.push(item);
             }
         });
+        logger.debug({
+            level: "RTU",
+            updatedRow: updatedRow.length,
+            newRowWithId: newRowWithId.length,
+            newRowWithIdM: newRowWithIdM.length
+        });
 
         const currDateTime = toDatetimeString(new Date());
 
@@ -51,8 +58,8 @@ module.exports = async (dataRtu) => {
                     bind = [newData.name, newData.sname, newData.location_id, newData.datel_id, newData.witel_id, newData.regional_id, currDateTime, oldData.id];
                 }
     
-                const autoClose = (newRowWithId.length < 1) && (newRowWithIdM.length < 1);
-                console.log(autoClose);
+                // const autoClose = (i == updatedRow.length - 1) && (newRowWithId.length < 1) && (newRowWithIdM.length < 1);
+                const autoClose = false;
                 await db.runQuery({ query, bind, autoClose });
 
             }
@@ -100,6 +107,6 @@ module.exports = async (dataRtu) => {
         }
 
     } catch(err) {
-        console.error(err);
+        logger.error(err);
     }
 };

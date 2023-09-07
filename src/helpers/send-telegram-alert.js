@@ -11,6 +11,15 @@ const delayNextAlert = time => {
     return new Promise((resolve) => setTimeout(resolve, time));
 };
 
+const sendTelegramMessage = async (chatId, message) => {
+    try {
+        await bot.telegram.sendMessage(chatId, message, { parse_mode: "Markdown" });
+        return { success: true };
+    } catch(error) {
+        return { success: false, error };
+    }
+};
+
 module.exports = async (alerts, onFinish) => {
 
     const defaultTimeout = config.alert.delayMessageTime;
@@ -22,52 +31,64 @@ module.exports = async (alerts, onFinish) => {
         const currAlert = alerts[i];
         try {
 
-            const res = await bot.telegram.sendMessage(currAlert.alert.chat_id, currAlert.message, { parse_mode: "Markdown" });
-            await updatePortMessage(currAlert.alert.id, "success");
+            const result = await sendTelegramMessage(currAlert.alert.chat_id, currAlert.message);
+            if(result.success) {
 
-            retryCount = 0;
-            i++;
-
-        } catch(err) {
-
-            let timeout = defaultTimeout;
-            retryCount++;
-
-            if(!err.code && !err.description) {
-
-                logger.error(err);
-
-            } else if(retryCount <= maxRetry) {
-
-                logger.error(`Failed to send message. Retry ${ retryCount - 1 }/${ maxRetry }`);
-
-                if(err.code && err.description) {
-                    const retryTime = telegramError.catchRetryTime(err.description);
-                    if(retryTime > 0) {
-                        timeout = (retryTime + 1) * 1000;
-                        logger.error(`retry time:${ retryTime }s`);
-                    } else {
-                        logger.error(`retry time uncatched, desc: ${ err.description }`);
-                    }
-                } else {
-                    logger.error(err);
-                }
-
-            } else {
-                
-                logger.error(`Failed to send message. Retry ${ retryCount - 1 }/${ maxRetry }`);
-                if(err.description)
-                    logger.error(`desc: ${ err.description }`);
-
-                await updatePortMessage(currAlert.alert.id, "unsended");
-                if(err.code && err.description)
-                    await storeAlertError(err.code, err.description, currAlert.alert.id, currAlert.user.chat_id);
+                await updatePortMessage(currAlert.alert.id, "success");
                 retryCount = 0;
                 i++;
-                
+
+            } else {
+
+                const err = result.error;
+                let timeout = defaultTimeout;
+                retryCount++;
+    
+                if(!err.code && !err.description) {
+    
+                    logger.error(err);
+    
+                } else if(retryCount <= maxRetry) {
+    
+                    logger.error(`Failed to send message. Retry ${ retryCount - 1 }/${ maxRetry }`);
+    
+                    if(err.code && err.description) {
+                        const retryTime = telegramError.catchRetryTime(err.description);
+                        if(retryTime > 0) {
+                            timeout = (retryTime + 1) * 1000;
+                            logger.error(`retry time:${ retryTime }s`);
+                        } else {
+                            logger.error(`retry time uncatched, desc: ${ err.description }`);
+                        }
+                    } else {
+                        logger.error(err);
+                    }
+    
+                } else {
+                    
+                    logger.error(`Failed to send message. Retry ${ retryCount - 1 }/${ maxRetry }`);
+                    if(err.description)
+                        logger.error(`desc: ${ err.description }`);
+                    else
+                        logger.error(err);
+    
+                    await updatePortMessage(currAlert.alert.id, "unsended");
+                    if(err.code && err.description)
+                        await storeAlertError(err.code, err.description, currAlert.alert.id, currAlert.alert.chat_id);
+    
+                    retryCount = 0;
+                    i++;
+                    
+                }
+                await delayNextAlert(timeout);
+
             }
-            await delayNextAlert(timeout);
-            
+
+
+        } catch(error) {
+
+            logger.error(error);
+
         }
     }
 

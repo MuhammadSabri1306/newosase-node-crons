@@ -30,6 +30,14 @@ class TelMessage
     static toUrl(text, url) {
         return `[${ text }](${ url })`;
     }
+
+    static tag(user = {}) {
+        if(user.username)
+            return `@${ user.username }`;
+        if(user.userId && user.text)
+            return `[${ user.text }](tg://user?id=${ user.userId })`;
+        return "";
+    }
 }
 
 module.exports = TelMessage;

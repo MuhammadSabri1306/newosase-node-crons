@@ -50,6 +50,28 @@ const getRegionalIcon = divreCode => {
     return " ";
 };
 
+const getPicText = picList => {
+    const picListText = picList.map(pic => {
+        if(pic.first_name && pic.last_name) {
+            return TelMessage.tag({
+                userId: pic.user_id,
+                text: `${ pic.first_name } ${ pic.last_name }`,
+            });
+        }
+
+        if(pic.username) {
+            return TelMessage.tag({ username: pic.username });
+        }
+
+        return TelMessage.tag({
+            userId: pic.user_id,
+            text: "Telegram User",
+        });
+    });
+
+    return TelMessage.toBoldText("PIC Lokasi ini adalah: ") + picListText.join(" ");
+};
+
 module.exports = (data) => {
 
     const title = getAlertTitle(data);
@@ -80,6 +102,12 @@ module.exports = (data) => {
     detailMsg.addLine("🌋 Status    : " + data.port_status);
     detailMsg.addLine("📅 Waktu     : " + datetimeStr);
     mainMsg.addLine(detailMsg.toCodeFormat());
+
+    if(Array.isArray(data.pic) && data.pic.length > 0) {
+        const picText = getPicText(data.pic);
+        mainMsg.addLine(picText);
+        mainMsg.addLine();
+    }
     
     mainMsg.addLine("❕Mohon untuk segera melakukan Pengecekan port Lokasi Terimakasih.");
     // mainMsg.addLine("Anda dapat mengetikan /alarm untuk mengecek alarm saat ini.");

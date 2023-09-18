@@ -24,6 +24,7 @@ module.exports = async (rtuParams) => {
     queryDbMsg.addFields("port.port_status");
     queryDbMsg.addFields("rtu.name AS rtu_name");
     queryDbMsg.addFields("rtu.sname AS rtu_code");
+    queryDbMsg.addFields("loc.id AS location_id");
     queryDbMsg.addFields("loc.location_name");
     queryDbMsg.addFields("loc.location_sname");
     queryDbMsg.addFields("datel.datel_name");

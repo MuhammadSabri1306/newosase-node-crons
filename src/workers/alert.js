@@ -3,13 +3,14 @@ const config = require("../config");
 const { logger } = require("../helpers/logger");
 const updatePortMessage = require("../helpers/db-query/update-port-message");
 const updatePortStatus = require("../helpers/db-query/update-port-status");
-const writeMessageStack = require("../helpers/write-message-stack");
-
-const getNewosasePortStatus = require("../helpers/newosase/fetch/get-port-status");
 const getPortStatus = require("../helpers/db-query/get-port-status");
-const defineAlarm = require("../helpers/define-alarm");
 const storePortStatus = require("../helpers/db-query/store-port-status");
 const getUnsendedPortMessage = require("../helpers/db-query/get-unsended-port-message");
+const getPicUserOnLoc = require("../helpers/db-query/get-pic-user-on-loc");
+
+const getNewosasePortStatus = require("../helpers/newosase/fetch/get-port-status");
+const defineAlarm = require("../helpers/define-alarm");
+const writeMessageStack = require("../helpers/write-message-stack");
 const buildMessage = require("../helpers/build-message");
 const sendTelegramAlert = require("../helpers/send-telegram-alert");
 
@@ -41,21 +42,44 @@ const getApiPortParams = () => {
     return params;
 };
 
-const buildAlert = async () => {
-    const portMsgParams = getRtuListParams();
+const getAlertPort = async (portMsgParams) => {
     try {
-        
-        const alertMsg = await getUnsendedPortMessage(portMsgParams);
-        const alerts = alertMsg.map(item => {
-            const message = buildMessage(item);
-            return { alert: item, message };
+
+        const alertMsgList = await getUnsendedPortMessage(portMsgParams);
+        if(alertMsgList.length < 1)
+            return [];
+
+        const alertMsgLocIds = alertMsgList
+            .map(loc => loc.location_id)
+            .reduce((locIds, locId) => {
+                if(!locIds.includes(locId))
+                    locIds.push(locId);
+                return locIds;
+            }, []);
+
+        const portPicList = await getPicUserOnLoc(alertMsgLocIds);
+        const result = alertMsgList.map(item => {
+            item.pic = portPicList.filter(picItem => picItem.location_id == item.location_id);
+            return item;
         });
-        return alerts;
+        return result;
 
     } catch(err) {
         logger.error(err);
         return [];
     }
+};
+
+const buildAlert = async () => {
+    const portMsgParams = getRtuListParams();
+    const alertMsg = await getAlertPort(portMsgParams);
+    
+    const alerts = alertMsg.map(item => {
+        const message = buildMessage(item);
+        return { alert: item, message };
+    });
+
+    return alerts;
 };
 
 const alert = async () => {
@@ -118,7 +142,6 @@ const alert = async () => {
                 state: 0,
                 end_at: currDate
             });
-            // await closePortStatus(closedAlarm);
         }
 
         const dataAlert = await buildAlert();

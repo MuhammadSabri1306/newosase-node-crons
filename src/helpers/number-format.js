@@ -1,3 +1,4 @@
+// @ts-nocheck
 
 module.exports.toIdrCurrency = numb => {
 	let numberStr = parseFloat(numb);
@@ -23,10 +24,16 @@ module.exports.toFixedNumber = (numb, numbBehindComma = 2) => {
 
 module.exports.toNumberText = (numb, decimalLimit = 2) => {
 	let numberStr = numb.toString();
-
+	const isNegative = numberStr.startsWith("-");
+	if(isNegative)
+		numberStr = numberStr.substring(1);
+  
 	const hasDecimal = numberStr.includes(".");
 	if(hasDecimal) {
 		const decimalPart = numberStr.split(".")[1];
+		const notNullIndex = decimalPart.search(/[1-9]/) + 1;
+		if(notNullIndex > decimalLimit)
+			decimalLimit = notNullIndex;
 		if(decimalPart.length > decimalLimit)
 			numberStr = parseFloat(numberStr).toFixed(decimalLimit);
 	}
@@ -42,6 +49,9 @@ module.exports.toNumberText = (numb, decimalLimit = 2) => {
 	}
   
 	result = split[1] !== undefined ? result + "," + split[1] : result;
+	if(isNegative)
+		result = "-" + result;
+  
 	return result;
 };
 

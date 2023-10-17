@@ -1,7 +1,7 @@
 const cron = require("node-cron");
 // const { syncOpnimusLocation, telegramAlertV3 } = require("./src/index");
-const densusAlertKwh = require("./src/app/alert-kwh");
-const { logger } = require("./src/helpers/logger");
+// const densusAlertKwh = require("./src/app/alert-kwh");
+const osaseCollectKwh = require("./src/osase-collect-kwh");
 
 /*
  * Main Alert V3
@@ -31,10 +31,25 @@ const { logger } = require("./src/helpers/logger");
  * Send Telegram Message contains Kwh daily usage
  * Runs every 09.00 WIB
  */
-cron.schedule("0 9 * * *", () => {
+// cron.schedule("0 9 * * *", () => {
+//     console.log("\n\n");
+//     logger.log("Running cron Densus Alert Kwh every 9 o'clock");
+//     densusAlertKwh();
+// }, {
+//     scheduled: true,
+//     timezone: "Asia/Jakarta"
+// });
+
+
+/*
+ * Osase Collect KwH
+ * Collecting osase kwh data to juan5684_osasemobile.kwh_counter_bck
+ * Runs every Hour
+ */
+cron.schedule("0 0 * * * *", () => {
     console.log("\n\n");
-    logger.log("Running cron Densus Alert Kwh every 9 o'clock");
-    densusAlertKwh();
+    logger.log("Running cron Osase Collect KwH every hour");
+    osaseCollectKwh.main();
 }, {
     scheduled: true,
     timezone: "Asia/Jakarta"

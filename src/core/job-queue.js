@@ -19,7 +19,7 @@ class JobQueue
 
     registerWorker(workerPath, data) {
         const worker = JSON.parse(JSON.stringify({
-            path: path.resolve(__dirname, "../workers/" + workerPath + ".js"),
+            path: path.resolve(__dirname, "../" + workerPath + ".js"),
             data,
             params: {}
         }));

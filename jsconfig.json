@@ -1,12 +1,12 @@
 {
     "compilerOptions": {
-        "module": "commonjs",
-        "moduleResolution": "node",
-        "paths": {
-            "src/*": ["./src/*"]
-        },
-        "checkJs": true
+        "target": "ES6", // Set the target ECMAScript version you're using
+        "module": "commonjs", // Set the module system (commonjs for Node.js)
+        "outDir": "./dist", // Specify the output directory for compiled files
+        "rootDir": "./src", // Specify the root directory for your source files
+        "strict": true, // Enable strict type checking
+        "esModuleInterop": true // Enable interoperability with CommonJS modules
     },
-    "exclude": ["node_modules", "**/node_modules/*"],
-    "include": ["./src"]
+    "include": ["src/**/*.js"], // Specify the files to include for analysis and compilation
+    "exclude": ["node_modules", "dist"] // Specify files to exclude from analysis and compilation
 }

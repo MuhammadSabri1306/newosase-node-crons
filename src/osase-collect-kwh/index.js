@@ -61,7 +61,6 @@ const main = () => {
         if(kwhList.length < 1) {
             logger.info("Kwh List is empty, App has run successfully");
             logger.info("App has run successfully");
-            process.exit();
             return;
         }
 
@@ -89,7 +88,6 @@ const main = () => {
                     logger.error(err);
                 else
                     logger.info("App has run successfully");
-                process.exit();
             });
 
         });
@@ -97,7 +95,7 @@ const main = () => {
     };
 
     logger.info(`Get rtu_map from database ${ dbConfig.densus.database }.rtu_map`);
-    conn.query("SELECT * FROM rtu_map WHERE divre_kode='TLK-r7000000'", (err, rtuList) => {
+    conn.query("SELECT * FROM rtu_map", (err, rtuList) => {
         if(err) return logger.error(err);
 
         const witelGroup = createWitelGroup(rtuList);

@@ -2,6 +2,7 @@ const cron = require("node-cron");
 // const { syncOpnimusLocation, telegramAlertV3 } = require("./src/index");
 // const densusAlertKwh = require("./src/app/alert-kwh");
 const osaseCollectKwh = require("./src/osase-collect-kwh");
+const opnimusAlertingPort = require("./src/opnimus-alerting-port");
 
 /*
  * Main Alert V3
@@ -47,10 +48,15 @@ const osaseCollectKwh = require("./src/osase-collect-kwh");
  * Runs every Hour
  */
 cron.schedule("0 0 * * * *", () => {
-    console.log("\n\n");
-    logger.log("Running cron Osase Collect KwH every hour");
+    console.log("\n\nRunning cron Osase Collect KwH every hour");
     osaseCollectKwh.main();
-}, {
-    scheduled: true,
-    timezone: "Asia/Jakarta"
+});
+
+/*
+ * Opnimus Alerting Port
+ * Runs every minutes
+ */
+cron.schedule("* * * * *", () => {
+    console.log("\n\nRunning cron Ports Alert (run on every minute)");
+    opnimusAlertingPort.main();
 });

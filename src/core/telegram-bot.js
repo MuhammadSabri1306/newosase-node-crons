@@ -28,14 +28,14 @@ const getAllMethods = object => {
 
 const useTelegramBot = (options = {}) => {
     const caller = () => {
-        const botUserame = options.username || null;
+        const botUsername = options.username || null;
         const botToken = options.token || null;
 
         const telegramBot = {
             $bot: new Telegraf(botToken),
 
             $data: {
-                username: botUserame
+                username: botUsername
             },
 
             getBot() {

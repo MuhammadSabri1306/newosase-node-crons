@@ -58,7 +58,7 @@ class TelegramText {
     }
 
     addMentionByUserId(userId, name) {
-        return this.addText(`[tg://user?id=${ userId }](${ name })`);
+        return this.addText(`[${ name }](tg://user?id=${ userId })`);
     }
 
 }

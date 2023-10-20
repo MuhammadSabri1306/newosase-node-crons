@@ -15,6 +15,7 @@ class JobQueue
         this.beforeRunCallback = null;
         this.afterRunCallback = null;
         this.eachAfterCallback = null;
+        this.eachError = null;
     }
 
     registerWorker(workerPath, data) {
@@ -39,6 +40,11 @@ class JobQueue
     onEachAfter(callback) {
         if(typeof callback == "function")
             this.eachAfterCallback = callback;
+    }
+
+    onEachError(callback) {
+        if(typeof callback == "function")
+            this.eachError = callback;
     }
 
     run() {
@@ -78,6 +84,19 @@ class JobQueue
             
             if(typeof this.eachAfterCallback == "function")
                 this.eachAfterCallback(resultData);
+            
+            if(this.delayTime)
+                setTimeout(this.executeNextJob.bind(this), this.delayTime);
+            else
+                this.executeNextJob();
+        });
+
+        worker.on("error", (error) => {
+            this.running--;
+            this.completeWorkers.push(currWorker);
+            
+            if(typeof this.eachError == "function")
+                this.eachError(error);
             
             if(this.delayTime)
                 setTimeout(this.executeNextJob.bind(this), this.delayTime);

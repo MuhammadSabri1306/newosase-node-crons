@@ -1,5 +1,5 @@
 const { parentPort, workerData } = require("worker_threads");
-const { logger } = require("./index");
+const logger = require("./logger");
 const TelegramText = require("../core/telegram-text");
 const { extractDate } = require("../helpers/date");
 const { toFixedNumber } = require("../helpers/number-format");

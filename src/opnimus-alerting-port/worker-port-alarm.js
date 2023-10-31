@@ -1,5 +1,5 @@
 const { parentPort, workerData } = require("worker_threads");
-const { logger } = require("./index");
+const logger = require("./logger");
 const { useHttp } = require("./http");
 
 const { witel, jobQueueNumber } = workerData;

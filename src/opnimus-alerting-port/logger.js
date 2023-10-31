@@ -10,7 +10,7 @@ const getLogFilePath = level => {
     return filePath;
 };
 
-module.exports.useLogger = () => {
+const useLogger = () => {
     return bunyan.createLogger({
         name: loggerName,
         streams: [
@@ -22,7 +22,7 @@ module.exports.useLogger = () => {
     });
 };
 
-module.exports.useDevLogger = () => {
+const useDevLogger = () => {
     const prettyStdOut = new PrettyStream();
     prettyStdOut.pipe(process.stdout);
 
@@ -39,14 +39,24 @@ module.exports.useDevLogger = () => {
     });
 };
 
-module.exports.useEmptyLogger = () => {
+const useDevLogger2 = () => {
+    return {
+        trace: (...args) => console.log(...args),
+        info: (...args) => console.info(...args),
+        warn: (...args) => console.warn(...args),
+        error: (...args) => console.error(...args),
+        fatal: (...args) => console.error(...args)
+    };
+};
+
+const useEmptyLogger = () => {
     return bunyan.createLogger({
         name: loggerName,
         streams: [{ level: "fatal", stream: process.stdout }]
     });
 };
 
-module.exports.readLogFile = level => {
+const readLogFile = level => {
     const logPathList = {
         "debug": getLogFilePath("debug"),
         "info": getLogFilePath("info"),
@@ -85,3 +95,5 @@ module.exports.readLogFile = level => {
 };
 
 // this.readLogFile("warn");
+module.exports = useLogger();
+// module.exports = useDevLogger2();

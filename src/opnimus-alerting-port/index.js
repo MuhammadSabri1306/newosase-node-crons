@@ -1,14 +1,10 @@
+const cron = require("node-cron");
 const mysql = require("mysql");
 const JobQueue = require("../core/job-queue");
-const { useLogger, useDevLogger, useEmptyLogger } = require("./logger");
+const logger = require("./logger");
 const dbConfig = require("../env/database");
 const { toDatetimeString } = require("../helpers/date");
 const { InsertQueryBuilder } = require("../helpers/mysql-query-builder");
-
-// const logger = useDevLogger();
-const logger = useLogger();
-// const logger = useEmptyLogger();
-module.exports.logger = logger;
 
 const createWitelGroup = (witelList, portList) => {
     const group = [];
@@ -28,10 +24,29 @@ const createWitelGroup = (witelList, portList) => {
     return group;
 };
 
-const runDbQuery = (conn, ...args) => {
-    return new Promise((resolve, reject) => {
+// const runDbQuery = (conn, ...args) => {
+//     return new Promise((resolve, reject) => {
         
-        const callback = (err, results) => {
+//         const callback = (err, results) => {
+//             if(err) {
+//                 reject(err);
+//                 return;
+//             }
+//             resolve(results);
+//         };
+
+//         if(args.length > 1)
+//             conn.query(args[0], args[1], callback);
+//         else
+//             conn.query(args[0], callback);
+
+//     });
+// };
+
+const runDbQuery = (pool, ...args) => {
+    return new Promise((resolve, reject) => {
+
+        const callback = (conn, err, results) => {
             if(err) {
                 reject(err);
                 return;
@@ -39,10 +54,13 @@ const runDbQuery = (conn, ...args) => {
             resolve(results);
         };
 
-        if(args.length > 1)
-            conn.query(args[0], args[1], callback);
-        else
-            conn.query(args[0], callback);
+        pool.getConnection((err, conn) => {
+            conn.release();
+            if(args.length > 1)
+                conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
+            else
+                conn.query(args[0], (err, results) => callback(conn, err, results));
+        });
 
     });
 };
@@ -212,7 +230,11 @@ module.exports.main = async () => {
     logger.info("App is starting");
 
     logger.info("Creating a database connection");
-    const conn = mysql.createConnection({
+    // const conn = mysql.createConnection({
+    //     ...dbConfig.opnimusNew,
+    //     multipleStatements: true
+    // });
+    const pool = mysql.createPool({
         ...dbConfig.opnimusNew,
         multipleStatements: true
     });
@@ -220,13 +242,13 @@ module.exports.main = async () => {
     try {
 
         logger.info(`Get witel list from database ${ dbConfig.opnimusNew.database }.witel`);
-        // const witelList = await runDbQuery(conn, "SELECT * FROM witel WHERE id=43");
-        const witelList = await runDbQuery(conn, "SELECT * FROM witel");
+        // const witelList = await runDbQuery(pool, "SELECT * FROM witel WHERE id=43");
+        const witelList = await runDbQuery(pool, "SELECT * FROM witel");
 
         logger.info(`Get port list from database ${ dbConfig.opnimusNew.database }.rtu_port_status`);
         const queryStr = "SELECT port.*, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id"+
             " FROM rtu_port_status AS port JOIN rtu_list AS rtu ON rtu.sname=port.rtu_code";
-        const portList = await runDbQuery(conn, queryStr);
+        const portList = await runDbQuery(pool, queryStr);
         // const portList = require("./sample-data/rtu-port-status.json");
         const witelPortList = createWitelGroup(witelList, portList);
         
@@ -261,7 +283,7 @@ module.exports.main = async () => {
             });
 
             logger.info(`Insert new ports to database ${ dbConfig.opnimusNew.database }.rtu_port_status`);
-            const insertPortResult = await runDbQuery(conn, queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
+            const insertPortResult = await runDbQuery(pool, queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
             alertPortIds = queryInsertPort.buildInsertedId(insertPortResult.insertId, insertPortResult.affectedRows);
 
         }
@@ -295,7 +317,7 @@ module.exports.main = async () => {
             }
 
             const updatesQueryStr = updateQueries.join("; ");
-            await runDbQuery(conn, updatesQueryStr);
+            await runDbQuery(pool, updatesQueryStr);
         }
 
         if(alertPortIds.length > 0) {
@@ -310,7 +332,7 @@ module.exports.main = async () => {
                 " JOIN witel AS wit ON wit.id=rtu.witel_id"+
                 " JOIN regional AS reg ON reg.id=rtu.regional_id"+
                 " WHERE port.id IN (?)";
-            const alertPortList = await runDbQuery(conn, queryAlertPortStr, alertPortIds);
+            const alertPortList = await runDbQuery(pool, queryAlertPortStr, [alertPortIds]);
 
             const alertPortUserParams = getAlertPortAreaIds(alertPortList); // { regionalIds, witelIds, locIds }
             const queryUserParams = [];
@@ -331,7 +353,7 @@ module.exports.main = async () => {
     
             const queryUserParamsStr = queryUserParams.join(" OR ");
             const queryUserStr = `SELECT * FROM telegram_user WHERE ${ queryUserParamsStr } ORDER BY regional_id, witel_id`;
-            const userList = await runDbQuery(conn, queryUserStr, queryUserParamsBind);
+            const userList = await runDbQuery(pool, queryUserStr, queryUserParamsBind);
     
             const newAlertList = createAlertList(alertPortList, userList);
             if(newAlertList.length > 0) {
@@ -346,7 +368,7 @@ module.exports.main = async () => {
                 });
     
                 logger.info(`Insert new alert stack to database ${ dbConfig.opnimusNew.database }.alert_message`);
-                await runDbQuery(conn, queryInsertAlert.getQuery(), queryInsertAlert.getBuiltBindData());
+                await runDbQuery(pool, queryInsertAlert.getQuery(), queryInsertAlert.getBuiltBindData());
     
             }
 
@@ -360,7 +382,7 @@ module.exports.main = async () => {
             " alert_message AS alert JOIN rtu_port_status AS port ON port.id=alert.port_id"+
             " JOIN rtu_list AS rtu ON rtu.sname=port.rtu_code JOIN rtu_location AS loc ON"+
             " loc.id=rtu.location_id WHERE alert.status='unsended'";
-        const alertList = await runDbQuery(conn, queryAlertListStr);
+        const alertList = await runDbQuery(pool, queryAlertListStr);
         if(alertList.length < 1) {
 
             logger.info("App was run successfully");
@@ -369,16 +391,16 @@ module.exports.main = async () => {
         }
 
         const { alertIds, alertLocIds } = extractAlerList(alertList);
-        await runDbQuery(conn, "UPDATE alert_message SET status='sending' WHERE id IN (?)", [alertIds]);
+        await runDbQuery(pool, "UPDATE alert_message SET status='sending' WHERE id IN (?)", [alertIds]);
 
         const picQueryStr = "SELECT user.id, user.user_id, user.type, user.username, user.first_name,"+
             " user.last_name, pers.nama AS full_name, pic.location_id FROM pic_location AS pic"+
             " JOIN telegram_user AS user ON user.id=pic.user_id"+
             " JOIN telegram_personal_user AS pers ON pers.user_id=pic.user_id"+
             " WHERE user.is_pic=1 AND pic.location_id IN (?)"
-        const picList = await runDbQuery(conn, picQueryStr, [alertLocIds]);
+        const picList = await runDbQuery(pool, picQueryStr, [alertLocIds]);
 
-        const regionalList = await runDbQuery(conn, "SELECT * FROM regional");
+        const regionalList = await runDbQuery(pool, "SELECT * FROM regional");
         const alertStack = createAlertStack({ alertList, regionalList, witelList, picList });
 
         logger.info("Worker Send Alert started.");
@@ -388,17 +410,28 @@ module.exports.main = async () => {
 
         if(unsendedAlertIds.length > 0) {
             logger.info("Rollback unsended alerts, total:"+unsendedAlertIds.length);
-            await runDbQuery(conn, "UPDATE alert_message SET status='unsended' WHERE id IN (?)", unsendedAlertIds);
+            await runDbQuery(pool, "UPDATE alert_message SET status='unsended' WHERE id IN (?)", unsendedAlertIds);
         }
 
         if(sendedAlertIds.length > 0) {
             logger.info("Delete sended alerts, total:"+sendedAlertIds.length);
-            await runDbQuery(conn, "DELETE FROM alert_message WHERE id IN (?)", sendedAlertIds);
+            await runDbQuery(pool, "DELETE FROM alert_message WHERE id IN (?)", [sendedAlertIds]);
         }
 
-        logger.info("App was run successfully");
+        pool.end(() => {
+            logger.info("App was run successfully");
+        });
         
     } catch(err) {
         logger.error(err);
     }
 };
+
+/*
+ * Opnimus Alerting Port
+ * Runs every minutes
+ */
+cron.schedule("* * * * *", () => {
+    logger.info("\n\nRunning cron Ports Alert (run on every minute)");
+    this.main();
+});

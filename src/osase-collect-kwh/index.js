@@ -1,16 +1,12 @@
+const cron = require("node-cron");
 const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql");
 const JobQueue = require("../core/job-queue");
-const { useLogger, useDevLogger, useEmptyLogger } = require("./logger");
+const logger = require("./logger");
 const dbConfig = require("../env/database");
 const { toDatetimeString } = require("../helpers/date");
 const rtuIgnoreList = require("./rtu-ignore.json");
-
-// const logger = useDevLogger();
-const logger = useLogger();
-// const logger = useEmptyLogger();
-module.exports.logger = logger;
 
 const filterByIgnoredRtu = false;
 
@@ -51,56 +47,30 @@ const createWitelGroup = rtuList => {
     return Object.values(witelGroup);
 };
 
-const main = () => {
-    logger.info("App is starting");
-    logger.info("Creating a database connection");
-    const conn = mysql.createConnection(dbConfig.densus);
+const runDbQuery = (pool, ...args) => {
+    return new Promise((resolve, reject) => {
 
-    const onFetchSuccess = kwhList => {
-
-        if(kwhList.length < 1) {
-            logger.info("Kwh List is empty, App has run successfully");
-            logger.info("App has run successfully");
-            return;
-        }
-
-        logger.info("Change database connection to osasemobile.");
-        conn.changeUser({ database: dbConfig.osasemobile.database }, err => {
-
-            if(err) return logger.error(err);
-
-            const queryValuesArr = [];
-            const dataBind = [];
-            const currDateStr = toDatetimeString(new Date());
-    
-            for(let i=0; i<kwhList.length; i++) {
-                queryValuesArr.push("(?, ?, ?, ?, ?, ?, ?)");
-                dataBind.push(kwhList[i].RTU_ID, kwhList[i].VALUE, kwhList[i].PORT, kwhList[i].NAMA_PORT, kwhList[i].TIPE_PORT, kwhList[i].SATUAN, currDateStr);
+        const callback = (conn, err, results) => {
+            if(err) {
+                reject(err);
+                return;
             }
-        
-            const queryValues = queryValuesArr.join(", ");
-            const query = "INSERT INTO kwh_counter_bck (rtu_kode, kwh_value, no_port, nama_port, tipe_port, satuan, timestamp)"+
-                " VALUES "+queryValues;
-    
-            logger.info(`Insert kwh items to database ${ dbConfig.osasemobile.database }.kwh_counter_bck`);
-            conn.query(query, dataBind, err => {
-                if(err)
-                    logger.error(err);
-                else
-                    logger.info("App has run successfully");
-            });
+            resolve(results);
+        };
 
+        pool.getConnection((err, conn) => {
+            conn.release();
+            if(args.length > 1)
+                conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
+            else
+                conn.query(args[0], (err, results) => callback(conn, err, results));
         });
 
-    };
+    });
+};
 
-    logger.info(`Get rtu_map from database ${ dbConfig.densus.database }.rtu_map`);
-    conn.query("SELECT * FROM rtu_map", (err, rtuList) => {
-        if(err) return logger.error(err);
-
-        const witelGroup = createWitelGroup(rtuList);
-        const kwhList = [];
-        const rtuListErr = [];
+const runWorkerGetOsasePort = (witelGroup, eachErrorCallback = null) => {
+    return new Promise(resolve => {
 
         logger.info("Setup fetching osase api workers");
         const workerQueue = new JobQueue(10);
@@ -109,7 +79,9 @@ const main = () => {
         witelGroup.forEach(witelRtuList => {
             workerQueue.registerWorker("osase-collect-kwh/worker-get-osase-port", { rtuList: witelRtuList });
         });
-
+        
+        const kwhList = [];
+        const rtuListErr = [];
         workerQueue.onEachAfter(workerResult => {
 
             if(!Array.isArray(workerResult)) {
@@ -127,13 +99,16 @@ const main = () => {
 
         });
 
+        if(typeof eachErrorCallback == "function")
+            workerQueue.onEachError(err => eachErrorCallback(err));
+
         workerQueue.onBeforeRun(() => {
             logger.info("Run fetching osase api workers");
         });
 
         workerQueue.onAfterRun(() => {
             logger.info("Fetching osase api workers run successfully");
-            onFetchSuccess(kwhList);
+            resolve({ kwhList, rtuListErr });
         });
 
         workerQueue.run();
@@ -141,5 +116,75 @@ const main = () => {
     });
 };
 
-module.exports.main = main;
-// main();
+module.exports.main = async () => {
+    logger.info("App is starting");
+
+    try {
+
+        logger.info("Creating a database connection");
+        const pool = mysql.createPool(dbConfig.densus);
+
+        logger.info(`Get rtu_map from database ${ dbConfig.densus.database }.rtu_map`);
+        const rtuList = await runDbQuery(pool, "SELECT * FROM rtu_map");
+        
+        const witelGroup = createWitelGroup(rtuList);
+        const { kwhList, rtuListErr } = await runWorkerGetOsasePort(witelGroup, err => {
+            logger.error("Error when running worker worker-get-osase-port.js:", err);
+        });
+
+        if(kwhList.length < 1) {
+            logger.info("Kwh List is empty, App has run successfully");
+            logger.info("App has run successfully");
+            return;
+        }
+
+        logger.info("Change database connection to osasemobile.");
+        await runDbQuery(pool, `USE ${ dbConfig.osasemobile.database }`);
+
+        const queryValuesArr = [];
+        const dataBind = [];
+        const currDateStr = toDatetimeString(new Date());
+
+        for(let i=0; i<kwhList.length; i++) {
+            queryValuesArr.push("(?, ?, ?, ?, ?, ?, ?)");
+            dataBind.push(kwhList[i].RTU_ID, kwhList[i].VALUE, kwhList[i].PORT, kwhList[i].NAMA_PORT, kwhList[i].TIPE_PORT, kwhList[i].SATUAN, currDateStr);
+        }
+
+        const queryValues = queryValuesArr.join(", ");
+        const insertQuery = "INSERT INTO kwh_counter_bck (rtu_kode, kwh_value, no_port, nama_port, tipe_port, satuan, timestamp)"+
+            " VALUES "+queryValues;
+
+        logger.info(`Insert kwh items to database ${ dbConfig.osasemobile.database }.kwh_counter_bck`);
+        await runDbQuery(pool, insertQuery, dataBind);
+
+        pool.end(() => {
+            logger.info("App has run successfully");
+        });
+
+
+    } catch(err) {
+        logger.error(err);
+        pool.end(() => {
+            logger.info("App has closed");
+        });
+    }
+};
+
+/*
+ * Osase Collect KwH
+ * Collecting osase kwh data to juan5684_osasemobile.kwh_counter_bck
+ * Runs every Hour
+ */
+cron.schedule("0 0 * * * *", async () => {
+    const startTime = toDatetimeString(new Date());
+    console.info(`\n\nRunning cron Osase Collect KwH at ${ startTime }`);
+    try {
+        await this.main();
+        const endTime = toDatetimeString(new Date());
+        console.info(`\n\nCron Osase Collect KwH closed at ${ endTime }`);
+    } catch(err) {
+        console.error(err);
+        const endTime = toDatetimeString(new Date());
+        console.info(`\n\nCron Osase Collect KwH closed at ${ endTime }`);
+    }
+});

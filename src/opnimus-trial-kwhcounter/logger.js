@@ -2,17 +2,8 @@ const bunyan = require("bunyan");
 const PrettyStream = require("bunyan-prettystream");
 const path = require("path");
 const fs = require("fs");
-// const EventEmitter = require("events").EventEmitter;
-// const util = require("util");
 
-// function MyFlakyStream() {}
-// util.inherits(MyFlakyStream, EventEmitter);
-
-// MyFlakyStream.prototype.write = function (rec) {
-//     this.emit('error', new Error('boom'));
-// }
-
-const loggerName = "Osase Collect KwH";
+const loggerName = "Opnimus Trial KwhCounter";
 
 const getLogFilePath = level => {
     const filePath = path.resolve(__dirname, `logs/${ level }.log`);
@@ -104,5 +95,5 @@ const readLogFile = level => {
 };
 
 // this.readLogFile("warn");
-module.exports = useLogger();
-// module.exports = useDevLogger2();
+// module.exports = useLogger();
+module.exports = useDevLogger2();

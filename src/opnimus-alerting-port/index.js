@@ -24,25 +24,6 @@ const createWitelGroup = (witelList, portList) => {
     return group;
 };
 
-// const runDbQuery = (conn, ...args) => {
-//     return new Promise((resolve, reject) => {
-        
-//         const callback = (err, results) => {
-//             if(err) {
-//                 reject(err);
-//                 return;
-//             }
-//             resolve(results);
-//         };
-
-//         if(args.length > 1)
-//             conn.query(args[0], args[1], callback);
-//         else
-//             conn.query(args[0], callback);
-
-//     });
-// };
-
 const runDbQuery = (pool, ...args) => {
     return new Promise((resolve, reject) => {
 
@@ -68,7 +49,7 @@ const runDbQuery = (pool, ...args) => {
 const runWorkerGetAlarm = (witelPortList, eachErrorCallback = null) => {
     return new Promise(resolve => {
 
-        const worker = new JobQueue(20);
+        const worker = new JobQueue(10);
         worker.setDelay(1000);
 
         witelPortList.forEach(witel => {
@@ -99,7 +80,7 @@ const runWorkerGetAlarm = (witelPortList, eachErrorCallback = null) => {
 const runWorkerSendAlert = (alertStack, eachErrorCallback = null) => {
     return new Promise((resolve, reject) => {
 
-        const worker = new JobQueue(20);
+        const worker = new JobQueue(10);
         worker.setDelay(1000);
 
         alertStack.forEach(alert => {
@@ -230,10 +211,6 @@ module.exports.main = async () => {
     logger.info("App is starting");
 
     logger.info("Creating a database connection");
-    // const conn = mysql.createConnection({
-    //     ...dbConfig.opnimusNew,
-    //     multipleStatements: true
-    // });
     const pool = mysql.createPool({
         ...dbConfig.opnimusNew,
         multipleStatements: true
@@ -424,6 +401,9 @@ module.exports.main = async () => {
         
     } catch(err) {
         logger.error(err);
+        pool.end(() => {
+            logger.info("App has closed");
+        });
     }
 };
 
@@ -431,7 +411,16 @@ module.exports.main = async () => {
  * Opnimus Alerting Port
  * Runs every minutes
  */
-cron.schedule("* * * * *", () => {
-    logger.info("\n\nRunning cron Ports Alert (run on every minute)");
-    this.main();
+cron.schedule("* * * * *", async () => {
+    const startTime = toDatetimeString(new Date());
+    console.info(`\n\nRunning cron Opnimus Alerting Port at ${ startTime }`);
+    try {
+        await this.main();
+        const endTime = toDatetimeString(new Date());
+        console.info(`\n\nCron Opnimus Alerting Port closed at ${ endTime }`);
+    } catch(err) {
+        logger.error(err);
+        const endTime = toDatetimeString(new Date());
+        console.info(`\n\nCron Opnimus Alerting Port closed at ${ endTime }`);
+    }
 });

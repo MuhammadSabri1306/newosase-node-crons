@@ -36,10 +36,13 @@ const runDbQuery = (pool, ...args) => {
         };
 
         pool.getConnection((err, conn) => {
-            conn.release();
-            if(err)
+            if(err) {
                 reject(err);
-            else if(args.length > 1)
+                return;
+            }
+            
+            conn.release();
+            if(args.length > 1)
                 conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
             else
                 conn.query(args[0], (err, results) => callback(conn, err, results));

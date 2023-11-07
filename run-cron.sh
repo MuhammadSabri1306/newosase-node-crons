@@ -11,4 +11,5 @@ echo "sudo nohup node ./src/opnimus-trial-kwhcounter > ./src/opnimus-trial-kwhco
 sudo nohup node ./src/opnimus-trial-kwhcounter > ./src/opnimus-trial-kwhcounter/logs/cron.log 2>&1 &
 
 # run all => ./run-cron.sh
+# run all => /var/www/html/crons/node-crons/run-cron.sh
 # list process in background => pgrep -a node

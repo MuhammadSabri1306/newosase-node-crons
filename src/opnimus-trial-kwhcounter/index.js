@@ -18,10 +18,13 @@ const runDbQuery = (pool, ...args) => {
         };
 
         pool.getConnection((err, conn) => {
-            conn.release();
-            if(err)
+            if(err) {
                 reject(err);
-            else if(args.length > 1)
+                return;
+            }
+            
+            conn.release();
+            if(args.length > 1)
                 conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
             else
                 conn.query(args[0], (err, results) => callback(conn, err, results));
@@ -100,7 +103,7 @@ module.exports.main = async () => {
 
         const currPortValue = port.value ? port.value : 0;
         const prevPortValue = (prevPort[0] && prevPort[0].value !== undefined) ? prevPort[0].value : currPortValue;
-        const deltaPortValue = currPortValue - prevPortValue;
+        const deltaPortValue = Math.round( (currPortValue - prevPortValue) * 100 ) / 100;
 
         const queryInsertPort = new InsertQueryBuilder("trial_kwhcounter_new");
         queryInsertPort.addFields("rtu_code");

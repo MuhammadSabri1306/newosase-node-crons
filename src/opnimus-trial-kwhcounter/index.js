@@ -19,7 +19,9 @@ const runDbQuery = (pool, ...args) => {
 
         pool.getConnection((err, conn) => {
             conn.release();
-            if(args.length > 1)
+            if(err)
+                reject(err);
+            else if(args.length > 1)
                 conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
             else
                 conn.query(args[0], (err, results) => callback(conn, err, results));
@@ -86,13 +88,18 @@ module.exports.main = async () => {
 
         const port = await fetchPortSensor();
         if(!port) {
-            pool.end(() => logger.info("App has closed"));
+            pool.end(() => logger.info("The Port isn't exists in api newosase. App has closed"));
             return;
         }
 
         const prevPort = await runDbQuery(pool, "SELECT * FROM trial_kwhcounter_new ORDER BY id DESC LIMIT 1");
-        const prevPortValue = (prevPort && prevPort.value !== undefined) ? prevPort.value : 0;
+        if(prevPort.length < 1) {
+            pool.end(() => logger.info("Previous Port isn't exists in database. App has closed"));
+            return;
+        }
+
         const currPortValue = port.value ? port.value : 0;
+        const prevPortValue = (prevPort[0] && prevPort[0].value !== undefined) ? prevPort[0].value : currPortValue;
         const deltaPortValue = currPortValue - prevPortValue;
 
         const queryInsertPort = new InsertQueryBuilder("trial_kwhcounter_new");

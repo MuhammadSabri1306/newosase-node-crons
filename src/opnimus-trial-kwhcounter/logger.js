@@ -95,5 +95,5 @@ const readLogFile = level => {
 };
 
 // this.readLogFile("warn");
-// module.exports = useLogger();
-module.exports = useDevLogger2();
+module.exports = useLogger();
+// module.exports = useDevLogger2();

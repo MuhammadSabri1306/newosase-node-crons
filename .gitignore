@@ -1,4 +1,6 @@
 **/node_modules
+src/config.js
+src/env
 
 # Logs
 logs

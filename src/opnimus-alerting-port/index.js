@@ -412,11 +412,7 @@ module.exports.main = async () => {
     }
 };
 
-/*
- * Opnimus Alerting Port
- * Runs every minutes
- */
-cron.schedule("* * * * *", async () => {
+const runCron = async () => {
     const startTime = toDatetimeString(new Date());
     console.info(`\n\nRunning cron Opnimus Alerting Port at ${ startTime }`);
     try {
@@ -428,4 +424,16 @@ cron.schedule("* * * * *", async () => {
         const endTime = toDatetimeString(new Date());
         console.info(`\n\nCron Opnimus Alerting Port closed at ${ endTime }`);
     }
-});
+};
+
+/*
+ * Opnimus Alerting Port
+ * Runs every minutes
+ */
+// cron.schedule("* * * * *", runCron);
+
+/*
+ * Opnimus Alerting Port
+ * Runs every 2 minutes
+ */
+cron.schedule("*/2 * * * *", runCron);

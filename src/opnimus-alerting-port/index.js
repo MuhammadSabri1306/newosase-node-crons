@@ -217,17 +217,17 @@ module.exports.main = async () => {
 
     logger.info("Creating a database connection");
     const pool = mysql.createPool({
-        ...dbConfig.opnimusNew,
+        ...dbConfig.opnimusNewMigrated,
         multipleStatements: true
     });
 
     try {
 
-        logger.info(`Get witel list from database ${ dbConfig.opnimusNew.database }.witel`);
+        logger.info(`Get witel list from database ${ dbConfig.opnimusNewMigrated.database }.witel`);
         // const witelList = await runDbQuery(pool, "SELECT * FROM witel WHERE id=43");
         const witelList = await runDbQuery(pool, "SELECT * FROM witel");
 
-        logger.info(`Get port list from database ${ dbConfig.opnimusNew.database }.rtu_port_status`);
+        logger.info(`Get port list from database ${ dbConfig.opnimusNewMigrated.database }.rtu_port_status`);
         const queryStr = "SELECT port.*, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id"+
             " FROM rtu_port_status AS port JOIN rtu_list AS rtu ON rtu.sname=port.rtu_code";
         const portList = await runDbQuery(pool, queryStr);
@@ -264,7 +264,7 @@ module.exports.main = async () => {
                     1, item.location ]);
             });
 
-            logger.info(`Insert new ports to database ${ dbConfig.opnimusNew.database }.rtu_port_status`);
+            logger.info(`Insert new ports to database ${ dbConfig.opnimusNewMigrated.database }.rtu_port_status`);
             const insertPortResult = await runDbQuery(pool, queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
             alertPortIds = queryInsertPort.buildInsertedId(insertPortResult.insertId, insertPortResult.affectedRows);
 
@@ -349,7 +349,7 @@ module.exports.main = async () => {
                     queryInsertAlert.appendRow([ item.portId, item.chatId, currDateTime ]);
                 });
     
-                logger.info(`Insert new alert stack to database ${ dbConfig.opnimusNew.database }.alert_message`);
+                logger.info(`Insert new alert stack to database ${ dbConfig.opnimusNewMigrated.database }.alert_message`);
                 await runDbQuery(pool, queryInsertAlert.getQuery(), queryInsertAlert.getBuiltBindData());
     
             }

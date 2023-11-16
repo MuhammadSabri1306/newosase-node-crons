@@ -37,32 +37,23 @@ const createDelay = time => {
     return new Promise((resolve) => setTimeout(resolve, time));
 };
 
-const fetchPortSensor = async () => {
+const fetchPortSensor = async (fetchParams, fetchResolve) => {
     logger.info("Create newosase api request");
 
     const newosaseBaseUrl = "https://newosase.telkom.co.id/api/v1";
     const http = useHttp(newosaseBaseUrl);
-    const params = {
-        searchRtuSname: "RTU00-D7-MAT",
-        searchDescription: "Konsumsi daya PLN 2"
-    };
 
     let retryCount = 0;
     let port = null;
     while(retryCount < 3) {
         try {
     
-            const response = await http.get("/dashboard-service/dashboard/rtu/port-sensors", { params });
-            if(!response.data || !response.data.result || !response.data.result.payload) {
+            const response = await http.get("/dashboard-service/dashboard/rtu/port-sensors", { params: fetchParams });
+            port = fetchResolve(response);
+            if(!port)
                 logger.warn(`No data provided in ${ newosaseBaseUrl }/dashboard-service/dashboard/rtu/port-sensors`, response.data);
-            } else if(!Array.isArray(response.data.result.payload) || response.data.result.payload.length < 1) {
-                logger.warn(`No data provided in ${ newosaseBaseUrl }/dashboard-service/dashboard/rtu/port-sensors`, response.data);
-            } else {
-                
+            else
                 logger.info("Collecting newosase api response");
-                port = response.data.result.payload[0];
-                
-            }
             
             retryCount = 3;
     
@@ -78,31 +69,24 @@ const fetchPortSensor = async () => {
     return port;
 };
 
-module.exports.main = async () => {
-    logger.info("App is starting");
-
-    logger.info("Creating a database connection");
-    const pool = mysql.createPool({
-        ...dbConfig.opnimusNew,
-        multipleStatements: true
-    });
-
+const collect = async (pool, { rtuCode, fetchParams, fetchResolve }) => {
     try {
 
-        const port = await fetchPortSensor();
+        const port = await fetchPortSensor(fetchParams, fetchResolve);
         if(!port) {
-            pool.end(() => logger.info("The Port isn't exists in api newosase. App has closed"));
-            return;
-        }
-
-        const prevPort = await runDbQuery(pool, "SELECT * FROM trial_kwhcounter_new ORDER BY id DESC LIMIT 1");
-        if(prevPort.length < 1) {
-            pool.end(() => logger.info("Previous Port isn't exists in database. App has closed"));
+            logger.info(`The Port isn't exists in api newosase, rtuCode=${ rtuCode }`)
             return;
         }
 
         const currPortValue = port.value ? port.value : 0;
-        const prevPortValue = (prevPort[0] && prevPort[0].value !== undefined) ? prevPort[0].value : currPortValue;
+        let prevPortValue = currPortValue;
+
+        const prevPort = await runDbQuery(pool, "SELECT * FROM trial_kwhcounter_new WHERE rtu_code=? ORDER BY id DESC LIMIT 1", [rtuCode]);
+        if(prevPort.length < 1 || prevPort[0].value === undefined)
+            logger.info(`Previous Port isn't exists in database, rtuCode=${ rtuCode }`);
+        else
+            prevPortValue = prevPort[0].value;
+
         const deltaPortValue = Math.round( (currPortValue - prevPortValue) * 100 ) / 100;
 
         const queryInsertPort = new InsertQueryBuilder("trial_kwhcounter_new");
@@ -122,15 +106,65 @@ module.exports.main = async () => {
             port.units, port.rtu_status, portStatus, currDateTime
         ]);
 
-        logger.info(`Insert new kwh row to database ${ dbConfig.opnimusNew.database }.trial_kwhcounter_new`);
+        logger.info(`Insert new kwh row to database ${ dbConfig.opnimusNew.database }.trial_kwhcounter_new, rtuCode=${ rtuCode }`);
         await runDbQuery(pool, queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
-
-        pool.end(() => logger.info("App has closed"));
         
     } catch(err) {
         logger.error(err);
-        pool.end(() => logger.info("App has closed"));
     }
+};
+
+module.exports.main = async () => {
+    
+    logger.info("App is starting");
+
+    const rtuTargetList = [
+        {
+            rtuCode: "RTU00-D7-MAT",
+            fetchParams: { searchRtuSname: "RTU00-D7-MAT", searchDescription: "Konsumsi daya PLN 2" },
+            fetchResolve: response => {
+                if(!response.data || !response.data.result || !response.data.result.payload)
+                    return null;
+                const ports = response.data.result.payload;
+                if(Array.isArray(ports) && ports.length > 0)
+                    return ports[0];
+                return null;
+            }
+        },
+        {
+            rtuCode: "RTU00-D7-PNK",
+            fetchParams: { searchRtuSname: "RTU00-D7-PNK", searchDescription: "Konsumsi daya PLN 2" },
+            fetchResolve: response => {
+                if(!response.data || !response.data.result || !response.data.result.payload)
+                    return null;
+                const ports = response.data.result.payload;
+                if(Array.isArray(ports) && ports.length > 0)
+                    return ports[0];
+                return null;
+            }
+        }
+    ];
+
+    logger.info("Creating a database connection");
+    const pool = mysql.createPool({
+        ...dbConfig.opnimusNew,
+        multipleStatements: true
+    });
+
+    let i = 0;
+    while(i < rtuTargetList.length) {
+        try {
+    
+            await collect(pool, rtuTargetList[i]);
+            
+        } catch(err) {
+            logger.error(err);
+        } finally {
+            i++;
+        }
+    }
+
+    pool.end(() => logger.info("App has closed"));
 
 };
 

@@ -1,44 +1,18 @@
 const cron = require("node-cron");
-const mysql = require("mysql");
+const { createDbPool, executeQuery, selectRowQuery } = require("../core/mysql");
 const logger = require("./logger");
 const dbConfig = require("../env/database");
 const { useHttp } = require("./http");
 const { toDatetimeString } = require("../helpers/date");
 const { InsertQueryBuilder } = require("../helpers/mysql-query-builder");
 
-const runDbQuery = (pool, ...args) => {
-    return new Promise((resolve, reject) => {
-
-        const callback = (conn, err, results) => {
-            if(err) {
-                reject(err);
-                return;
-            }
-            resolve(results);
-        };
-
-        pool.getConnection((err, conn) => {
-            if(err) {
-                reject(err);
-                return;
-            }
-            
-            conn.release();
-            if(args.length > 1)
-                conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
-            else
-                conn.query(args[0], (err, results) => callback(conn, err, results));
-        });
-
-    });
-};
-
 const createDelay = time => {
     return new Promise((resolve) => setTimeout(resolve, time));
 };
 
 const fetchPortSensor = async (fetchParams, fetchResolve) => {
-    logger.info("Create newosase api request");
+    const fetchUrl = "/dashboard-service/dashboard/rtu/port-sensors";
+    logger.info("Create newosase api request", fetchUrl, fetchParams);
 
     const newosaseBaseUrl = "https://newosase.telkom.co.id/api/v1";
     const http = useHttp(newosaseBaseUrl);
@@ -48,7 +22,7 @@ const fetchPortSensor = async (fetchParams, fetchResolve) => {
     while(retryCount < 3) {
         try {
     
-            const response = await http.get("/dashboard-service/dashboard/rtu/port-sensors", { params: fetchParams });
+            const response = await http.get(fetchUrl, { params: fetchParams });
             port = fetchResolve(response);
             if(!port)
                 logger.warn(`No data provided in ${ newosaseBaseUrl }/dashboard-service/dashboard/rtu/port-sensors`, response.data);
@@ -81,11 +55,12 @@ const collect = async (pool, { rtuCode, fetchParams, fetchResolve }) => {
         const currPortValue = port.value ? port.value : 0;
         let prevPortValue = currPortValue;
 
-        const prevPort = await runDbQuery(pool, "SELECT * FROM trial_kwhcounter_new WHERE rtu_code=? ORDER BY id DESC LIMIT 1", [rtuCode]);
-        if(prevPort.length < 1 || prevPort[0].value === undefined)
+        const prevPortQuery = await selectRowQuery(pool, (conn, resolve) => conn.query("SELECT * FROM trial_kwhcounter_new WHERE rtu_code=? ORDER BY id DESC LIMIT 1", [rtuCode], resolve));
+        const prevPort = prevPortQuery.results;
+        if(!prevPort)
             logger.info(`Previous Port isn't exists in database, rtuCode=${ rtuCode }`);
         else
-            prevPortValue = prevPort[0].value;
+            prevPortValue = prevPort.value;
 
         const deltaPortValue = Math.round( (currPortValue - prevPortValue) * 100 ) / 100;
 
@@ -107,7 +82,7 @@ const collect = async (pool, { rtuCode, fetchParams, fetchResolve }) => {
         ]);
 
         logger.info(`Insert new kwh row to database ${ dbConfig.opnimusNew.database }.trial_kwhcounter_new, rtuCode=${ rtuCode }`);
-        await runDbQuery(pool, queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
+        await executeQuery(pool, (conn, resolve) => conn.query(queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData(), resolve));
         
     } catch(err) {
         logger.error(err);
@@ -146,10 +121,7 @@ module.exports.main = async () => {
     ];
 
     logger.info("Creating a database connection");
-    const pool = mysql.createPool({
-        ...dbConfig.opnimusNew,
-        multipleStatements: true
-    });
+    const pool = createDbPool(dbConfig.opnimusNew);
 
     let i = 0;
     while(i < rtuTargetList.length) {

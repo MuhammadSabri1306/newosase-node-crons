@@ -39,13 +39,14 @@ const readLogFile = level => {
 const formatLogForFile = (record) => {
     // const logDate = new Date(record.time).toISOString();
     const dateOptions = {
+        timeZone: "Asia/Jakarta",
         day: 'numeric',
         month: 'numeric',
         year: 'numeric',
         hour: 'numeric',
         minute: 'numeric',
         second: 'numeric',
-        hourCycle: "h24"
+        hourCycle: "h24",
     };
     const dateStr = new Intl.DateTimeFormat('en-ID', dateOptions).format(new Date(record.time));
 
@@ -85,4 +86,4 @@ const prettyfyLogFile = (level) => {
 };
 
 // readLogFile("error");
-prettyfyLogFile("error");
+prettyfyLogFile("info");

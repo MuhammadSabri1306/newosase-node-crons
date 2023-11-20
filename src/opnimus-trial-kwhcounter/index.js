@@ -1,5 +1,5 @@
 const cron = require("node-cron");
-const { createDbPool, executeQuery, selectRowQuery } = require("../core/mysql");
+const { createDbPool, executeQuery, selectRowQuery, createQuery } = require("../core/mysql");
 const logger = require("./logger");
 const dbConfig = require("../env/database");
 const { useHttp } = require("./http");
@@ -55,7 +55,9 @@ const collect = async (pool, { rtuCode, fetchParams, fetchResolve }) => {
         const currPortValue = port.value ? port.value : 0;
         let prevPortValue = currPortValue;
 
-        const prevPortQuery = await selectRowQuery(pool, (conn, resolve) => conn.query("SELECT * FROM trial_kwhcounter_new WHERE rtu_code=? ORDER BY id DESC LIMIT 1", [rtuCode], resolve));
+        const prevPortQueryStr = createQuery("SELECT * FROM trial_kwhcounter_new WHERE rtu_code=? ORDER BY id DESC LIMIT 1", [rtuCode]);
+        logger.info(`Try to execute query ${ prevPortQueryStr } in database ${ dbConfig.opnimusNewMigrated.database }.trial_kwhcounter_new`);
+        const prevPortQuery = await selectRowQuery(pool, prevPortQueryStr);
         const prevPort = prevPortQuery.results;
         if(!prevPort)
             logger.info(`Previous Port isn't exists in database, rtuCode=${ rtuCode }`);
@@ -81,8 +83,9 @@ const collect = async (pool, { rtuCode, fetchParams, fetchResolve }) => {
             port.units, port.rtu_status, portStatus, currDateTime
         ]);
 
-        logger.info(`Insert new kwh row to database ${ dbConfig.opnimusNew.database }.trial_kwhcounter_new, rtuCode=${ rtuCode }`);
-        await executeQuery(pool, (conn, resolve) => conn.query(queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData(), resolve));
+        const insertQueryStr = createQuery(queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
+        logger.info(`Try to execute query ${ insertQueryStr } in database ${ dbConfig.opnimusNewMigrated.database }.trial_kwhcounter_new`);
+        // await executeQuery(pool, insertQueryStr);
         
     } catch(err) {
         logger.error(err);
@@ -121,7 +124,7 @@ module.exports.main = async () => {
     ];
 
     logger.info("Creating a database connection");
-    const pool = createDbPool(dbConfig.opnimusNew);
+    const pool = createDbPool(dbConfig.opnimusNewMigrated);
 
     let i = 0;
     while(i < rtuTargetList.length) {
@@ -159,3 +162,4 @@ const cronApp = async () => {
 };
 
 cron.schedule("0 0 * * * *", cronApp);
+// cronApp();

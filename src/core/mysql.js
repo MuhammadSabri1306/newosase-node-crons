@@ -32,19 +32,19 @@ module.exports.getConnection = (pool) => {
     });
 };
 
-module.exports.executeQuery = (pool, callQuery) => {
+const executeQueryV1 = (pool, callQuery) => {
     return new Promise(async (resolve, reject) => {
         try {
 
             const conn = await this.getConnection(pool);
             callQuery(conn, (err, results, fields) => {
 
+                conn.release();
                 if(err) {
                     reject(err);
                     return;
                 }
                 
-                conn.release();
                 resolve({ err, results, fields });
 
             });
@@ -55,19 +55,50 @@ module.exports.executeQuery = (pool, callQuery) => {
     });
 };
 
-module.exports.selectRowQuery = (pool, callQuery) => {
+const changeQueryError = (err, queryStr) => {
+    if(err.message !== undefined)
+        err.message = `${ err.message }\nquery: ${ queryStr }`;
+    return err;
+};
+
+const executeQueryV2 = (pool, queryStr) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+
+            const conn = await this.getConnection(pool);
+            conn.query(queryStr, (err, results, fields) => {
+
+                conn.release();
+                if(err) {
+                    reject(changeQueryError(err, queryStr));
+                    return;
+                }
+                
+                resolve({ err, results, fields });
+
+            });
+
+        } catch(err) {
+            reject(changeQueryError(err, queryStr));
+        }
+    });
+};
+
+module.exports.executeQuery = executeQueryV2;
+
+const selectRowQueryV1 = (pool, callQuery) => {
     return new Promise(async (resolve, reject) => {
         try {
 
             const conn = await this.getConnection(pool);
             callQuery(conn, (err, results, fields) => {
 
+                conn.release();
                 if(err) {
                     reject(err);
                     return;
                 }
                 
-                conn.release();
                 results = results.length > 0 ? results[0] : null;
                 resolve({ err, results, fields });
 
@@ -79,3 +110,31 @@ module.exports.selectRowQuery = (pool, callQuery) => {
         }
     });
 };
+
+const selectRowQueryV2 = (pool, queryStr) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+
+            const conn = await this.getConnection(pool);
+            conn.query(queryStr, (err, results, fields) => {
+
+                conn.release();
+                if(err) {
+                    reject(changeQueryError(err, queryStr));
+                    return;
+                }
+                
+                results = results.length > 0 ? results[0] : null;
+                resolve({ err, results, fields });
+
+            });
+
+        } catch(err) {
+            reject(changeQueryError(err, queryStr));
+        }
+    });
+};
+
+module.exports.selectRowQuery = selectRowQueryV2;
+
+module.exports.createQuery = mysql.format;

@@ -1,0 +1,51 @@
+{
+    "code": 200,
+    "message": "Request was successfully processed and returned",
+    "result": {
+        "perPage": "all",
+        "lastPage": 1,
+        "totalData": 1,
+        "payload": [
+            {
+                "result_type": "port",
+                "rtu_id": "1087",
+                "rtu_name": "RTU STO ANTANG 1",
+                "rtu_sname": "RTU00-D7-ANT",
+                "ip_rtu": "10.145.122.2",
+                "rtu_status": "normal",
+                "regional": "DIVISI REGIONAL 7 KAWASAN TIMUR INDONESIA",
+                "witel": "WITEL MAKASSAR",
+                "location": "ANTANG",
+                "id": "33529",
+                "port_name": "AC Voltage PLN",
+                "no_port": "A-00",
+                "metrics": "RTU00_D7_ANT_PLN_VPP_A_00",
+                "description": "PLN.Volt.PP.RS ANTANG",
+                "units": "V",
+                "created_at": "1690267322815",
+                "updated_at": "1699340746584",
+                "created_by": null,
+                "updated_by": "RIFQI FADHLILLAH",
+                "identifier": "PLN_VPP",
+                "severity": {
+                    "id_m_port": "31",
+                    "rule": "val < 342 or val > 420",
+                    "id": "4",
+                    "severity": "Critical",
+                    "colors": "#EC406C",
+                    "name": "Critical"
+                },
+                "treshold": [
+                    {
+                        "id_m_port": "31",
+                        "rule": "val < 342 or val > 420",
+                        "id": "4",
+                        "severity": "Critical",
+                        "colors": "#EC406C"
+                    }
+                ],
+                "value": 52.300000000000004
+            }
+        ]
+    }
+}

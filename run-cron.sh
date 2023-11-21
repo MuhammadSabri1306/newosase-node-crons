@@ -1,6 +1,6 @@
 # run opnimus-alerting-port
-echo "sudo nohup node ./src/opnimus-alerting-port > ./src/opnimus-alerting-port/logs/cron.log 2>&1 &"
-sudo nohup node ./src/opnimus-alerting-port > ./src/opnimus-alerting-port/logs/cron.log 2>&1 &
+echo "sudo nohup node ./src/opnimus-alerting-port-v2 > ./src/opnimus-alerting-port-v2/logs/cron.log 2>&1 &"
+sudo nohup node ./src/opnimus-alerting-port-v2 > ./src/opnimus-alerting-port-v2/logs/cron.log 2>&1 &
 
 # run osase-collect-kwh
 echo "sudo nohup node ./src/osase-collect-kwh > ./src/osase-collect-kwh/logs/cron.log 2>&1 &"

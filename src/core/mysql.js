@@ -137,4 +137,28 @@ const selectRowQueryV2 = (pool, queryStr) => {
 
 module.exports.selectRowQuery = selectRowQueryV2;
 
+module.exports.selectRowCollumnQuery = (pool, collumnKey, queryStr) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+
+            const conn = await this.getConnection(pool);
+            conn.query(queryStr, (err, results, fields) => {
+
+                conn.release();
+                if(err) {
+                    reject(changeQueryError(err, queryStr));
+                    return;
+                }
+                
+                results = results.length > 0 ? results[0][collumnKey] : null;
+                resolve({ err, results, fields });
+
+            });
+
+        } catch(err) {
+            reject(changeQueryError(err, queryStr));
+        }
+    });
+};
+
 module.exports.createQuery = mysql.format;

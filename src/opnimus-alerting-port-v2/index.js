@@ -367,7 +367,7 @@ const runCron = async () => {
     const startTime = toDatetimeString(new Date());
     console.info(`\n\nRunning cron Opnimus Alerting Port V2 at ${ startTime }`);
     try {
-        await this.main();
+        await this.main(true);
         const endTime = toDatetimeString(new Date());
         console.info(`\n\nCron Opnimus Alerting Port V2 closed at ${ endTime }`);
     } catch(err) {

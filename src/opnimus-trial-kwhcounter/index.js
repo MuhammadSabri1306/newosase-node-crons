@@ -120,7 +120,47 @@ module.exports.main = async () => {
                     return ports[0];
                 return null;
             }
-        }
+        },
+        {
+            rtuCode: "RTU00-D7-BAL",
+            fetchParams: {
+                searchRtuSname: "RTU00-D7-BAL",
+                searchDescription: "Konsumsi daya PLN 2",
+                searchNoPort: "A-14",
+            },
+            fetchResolve: response => {
+                if(!response.data || !response.data.result || !response.data.result.payload)
+                    return null;
+                const ports = response.data.result.payload;
+                if(Array.isArray(ports) && ports.length > 0)
+                    return ports[0];
+                return null;
+            }
+        },
+        {
+            rtuCode: "RTU00-D7-PTR",
+            fetchParams: { searchRtuSname: "RTU00-D7-PTR", searchDescription: "Konsumsi daya PLN 2" },
+            fetchResolve: response => {
+                if(!response.data || !response.data.result || !response.data.result.payload)
+                    return null;
+                const ports = response.data.result.payload;
+                if(Array.isArray(ports) && ports.length > 0)
+                    return ports[0];
+                return null;
+            }
+        },
+        {
+            rtuCode: "RTU00-D7-TMA",
+            fetchParams: { searchRtuSname: "RTU00-D7-TMA", searchDescription: "Konsumsi daya PLN 2" },
+            fetchResolve: response => {
+                if(!response.data || !response.data.result || !response.data.result.payload)
+                    return null;
+                const ports = response.data.result.payload;
+                if(Array.isArray(ports) && ports.length > 0)
+                    return ports[0];
+                return null;
+            }
+        },
     ];
 
     logger.info("Creating a database connection");

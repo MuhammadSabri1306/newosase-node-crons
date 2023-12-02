@@ -150,7 +150,7 @@ module.exports.selectRowCollumnQuery = (pool, collumnKey, queryStr) => {
                     return;
                 }
                 
-                results = results.length > 0 ? results[0][collumnKey] : null;
+                results = (results.length > 0 && results[0][collumnKey]) ? results[0][collumnKey] : null;
                 resolve({ err, results, fields });
 
             });

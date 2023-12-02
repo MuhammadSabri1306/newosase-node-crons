@@ -1,165 +1,242 @@
 const cron = require("node-cron");
-const mysql = require("mysql");
 const logger = require("./logger");
 const dbConfig = require("../env/database");
 const { useHttp } = require("./http");
 const { toDatetimeString } = require("../helpers/date");
 const { InsertQueryBuilder } = require("../helpers/mysql-query-builder");
-
-const runDbQuery = (pool, ...args) => {
-    return new Promise((resolve, reject) => {
-
-        const callback = (conn, err, results) => {
-            if(err) {
-                reject(err);
-                return;
-            }
-            resolve(results);
-        };
-
-        pool.getConnection((err, conn) => {
-            if(err) {
-                reject(err);
-                return;
-            }
-            
-            conn.release();
-            if(args.length > 2)
-                conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
-            else if(args.length > 1)
-                conn.query(args[0], args[1], (err, results) => callback(conn, err, results));
-            else
-                conn.query(args[0], (err, results) => callback(conn, err, results));
-        });
-
-    });
-};
+const { createDbPool, executeQuery, selectRowQuery,
+    selectRowCollumnQuery, createQuery } = require("../core/mysql");
 
 const createDbPools = database => {
     logger.info("Creating a database connection");
-    const poolDbOld = mysql.createPool({
-        host: "10.60.164.18",
-        user: "admindb",
-        password: "@Dm1ndb#2020",
-        database
-    });
-    const poolDbNew = mysql.createPool({
-        host: "10.62.175.4",
-        user: "admapp",
-        password: "4dm1N4Pp5!!",
-        database
-    });
+    const dbConfigOld = dbConfig.opnimusNewMigrated;
+    const dbConfigNew = dbConfig.opnimusNewMigrated2;
+
+    dbConfigOld.database = database;
+    dbConfigNew.database = database;
+
+    const poolDbOld = mysql.createPool(dbConfigOld);
+    const poolDbNew = mysql.createPool(dbConfigNew);
     return { poolDbOld, poolDbNew }
 };
 
-const closeDbPoolsConnection = (poolDbOld, poolDbNew, callback) => {
-    poolDbOld.end(() => {
-        poolDbNew.end(callback);
-    });
+const closeDbPoolsConnection = (poolDbOld, poolDbNew, callback = null) => {
+    if(typeof callback == "function")
+        poolDbOld.end(() => poolDbNew.end(callback));
+    else
+        poolDbOld.end(() => poolDbNew.end());
 };
 
-module.exports.main = async (database, tableName, processCode = 1) => {
-    logger.info("App is starting");
-    const { poolDbOld, poolDbNew } = createDbPools(database);
+const getPoolDbName = pool => pool.config.connectionConfig?.database || null;
 
+const getTables = async (pool) => {
+    logger.info(`Get all tables name from ${ getPoolDbName(pool) }`);
     try {
 
-        if(processCode <= 1) {
+        const { results } = await executeQuery(pool, "SHOW TABLES");
+        const tables = results.map(row => Object.values(row)[0]);
+        return tables;
 
-            logger.info(`Empty table ${ database }.${ tableName } in new host`);
-            await runDbQuery(poolDbNew, `DELETE FROM ${ tableName }`);
+    } catch(err) {
+        logger.error(`Failed to get tables name from ${ getPoolDbName(pool) }`, err);
+        return [];
+    }
+};
 
+const getTableStructure = async (pool, tableName) => {
+    try {
+
+        const { results } = await executeQuery(pool, `DESCRIBE ${ tableName }`);
+        return results;
+
+    } catch(err) {
+        logger.error(`Failed to get table structure of ${ getPoolDbName(pool) }.${ tableName }`, err);
+        return null;
+    }
+};
+
+const getCreateTableQuery = async (pool, tableName) => {
+    try {
+
+        const { results } = await selectRowQuery(pool, `SHOW CREATE TABLE ${ tableName }`);
+        for(let key in results) {
+            if(key.toLowerCase() == "create table") {
+                return results[key];
+            }
         }
 
-        logger.info(`Get ${ database }.${ tableName } data from old host`);
-        const data = await runDbQuery(poolDbOld, `SELECT * FROM ${ tableName }`);
+        return null;
 
-        const fields = data.length > 0 ? Object.keys(data[0]) : null;
-        if(data.length < 1) {
-            closeDbPoolsConnection(poolDbOld, poolDbNew, () => logger.info(`Data from ${ database }.${ tableName } in old host is empty. App has closed`));
-            return;
+    } catch(err) {
+        return null;
+    }
+};
+
+const insertTableData = async (pool, tableName, data, limit = 100) => {
+    if(data.length < 1)
+        return;
+
+    let query;
+    const queryFields = Object.keys(data[0]);
+
+    let startIndex = 0;
+    let endIndex = Math.min( (limit - 1), (data.length - 1) );
+
+    while(startIndex < data.length) {
+        
+        query = new InsertQueryBuilder(tableName);
+        queryFields.forEach(field => query.addFields(field));
+
+        for(let index=startIndex; index<=endIndex; index++) {
+            query.appendRow( queryFields.map(key => data[index][key]) );
         }
 
-        if(processCode <= 2) {
-
-            let i = 0;
-            let insertQuery;
-            let rowBind;
+        try {
             
-            while(i < data.length) {
-                
-                insertQuery = new InsertQueryBuilder(tableName);
-                rowBind = [];
+            logger.info(`Inserting data to ${ tableName } in rowIndex ${ startIndex }-${ endIndex }`);
+            await executeQuery( pool, createQuery(query.getQuery(), query.getBuiltBindData()) );
 
-                fields.forEach(key => {
-                    insertQuery.addFields(key);
-                    rowBind.push(data[i][key]);
-                });
+        } catch(err) {
+            logger.error(`Error when inserting data to ${ tableName } in rowIndex ${ startIndex }-${ endIndex }`, err);
+        } finally{
 
-                insertQuery.appendRow(rowBind);
-                logger.info(`Insert data row:${ i + 1 } id:${ data[i].id } to ${ database }.${ tableName } in new host`);
-                await runDbQuery(poolDbNew, insertQuery.getQuery(), insertQuery.getBuiltBindData());
+            startIndex = startIndex + limit;
+            endIndex = Math.min( (endIndex + limit), (data.length - 1) );
 
-                i++;
+        }
 
+    }
+};
+
+module.exports.syncTableStructure = async (poolSrc, poolDest, tableName) => {
+    
+    const tableSrc = `${ getPoolDbName(poolSrc) }.${ tableName }`;
+    const tableDest = `${ getPoolDbName(poolDest) }.${ tableName }`;
+    const syncInfo = `${ tableSrc } <-> ${ tableDest }`;
+    logger.info(`Sync table's structure ${ syncInfo }`);
+    try {
+
+        const structSrc = await getTableStructure(poolSrc, tableName);
+        const collumns = Object.keys(structSrc);
+        const structDest = await getTableStructure(poolDest, tableName);
+
+        if(structDest) {
+
+            let isStructureMatch = true;
+
+            for(let i=0; i<structSrc.length; i++) {
+                for(let j=0; j<collumns.length; j++) {
+
+                    if(structSrc[i][ collumns[j] ] != structDest[i][ collumns[j] ]) {
+                        isStructureMatch = false;
+                        j = collumns.length;
+                        i = structSrc.length;
+                    }
+
+                }
             }
 
+            if(isStructureMatch) {
+                logger.info(`Table's structure of ${ syncInfo } was sychronized`);
+                return true;
+            } else {
+
+                logger.info(`Table's structure of ${ syncInfo } is not match, dropping table ${ tableDest }`);
+                await executeQuery(poolDest, `DROP ${ tableName }`);
+
+            }
         }
 
-        closeDbPoolsConnection(poolDbOld, poolDbNew, () => logger.info("App has closed"));
-        
+        const createTableQueryStr = await getCreateTableQuery(poolSrc, tableName);
+        logger.info(`Create new table, query:${ createTableQueryStr }`);
+
+        await executeQuery(poolDest, createTableQueryStr);
+        logger.info(`Table's structure of ${ syncInfo } was sychronized`);
+        return true;
+
+
     } catch(err) {
-        logger.error(err);
-        closeDbPoolsConnection(poolDbOld, poolDbNew, () => logger.info("App has closed"));
-    }
-
-};
-
-const runWorkList = async (database, tableList) => {
-    for(let i=0; i<tableList.length; i++) {
-        await this.main(database, tableList[i], 1);
+        logger.error(`Failed to sync table's structure ${ syncInfo }`, err);
+        return false;
     }
 };
 
-// this.main("juan5684_opnimus_new", "newosase_api_token", 1);
+module.exports.syncTableData = async (poolSrc, poolDest, tableName, idField = "id") => {
+    const tableSrc = `${ getPoolDbName(poolSrc) }.${ tableName }`;
+    const tableDest = `${ getPoolDbName(poolDest) }.${ tableName }`;
+    const syncInfo = `${ tableSrc } <-> ${ tableDest }`;
+    logger.info(`Sync table's data ${ syncInfo }`);
+    try {
 
-// runWorkList("juan5684_opnimus_new", [
-//     // "alert_message",
-//     // "conversation",
-//     // "datel",
-//     // "newosase_api_token",
-//     // "pic_location",
-//     // "regional",
-//     // "registration",
-//     // "rtu_list",
-//     // "rtu_location",
-//     // "rtu_port_status",
-//     // "telegram_admin",
-//     // "telegram_alarm_error",
-//     "telegram_callback_query",
-//     "telegram_personal_user",
-//     "telegram_user",
-//     "witel"
-// ]);
+        const getLastIdQueryStr = `SELECT ${ idField } FROM ${ tableName } ORDER BY ${ idField } DESC LIMIT 1`;
+        const lastIdSrc = await selectRowCollumnQuery(poolSrc, idField, getLastIdQueryStr);
+        const lastIdDest = await selectRowCollumnQuery(poolSrc, idField, getLastIdQueryStr);
 
-// this.main("juan5684_opnimus_new", "rtu_port_status", 1);
+        if(lastIdDest == lastIdSrc) {
 
-// runWorkList("juan5684_opnimus_new_bot", [
-    // "callback_query",
-    // "chat",
-    // "chat_join_request",
-    // "chat_member_updated",
-    // "chosen_inline_result",
-    // "conversation",
-    // "edited_message",
-    // "inline_query",
-    // "message",
-    // "poll",
-    // "poll_answer",
-    // "pre_checkout_query",
-    // "request_limiter",
-    // "shipping_query",
-    // "telegram_update",
-    // "user",
-    // "user_chat",
-// ]);
+            logger.info(`Table's data of ${ syncInfo } was sychronized`);
+            return true;
+
+        }
+
+        logger.info(`Table's last id of ${ syncInfo } is not match, resetting data of table ${ tableDest }`);
+        await executeQuery(poolDest, `TRUNCATE TABLE ${ tableName }`);
+
+        logger.info(`Get all data from table ${ tableSrc }`);
+        const { results } = await executeQuery(poolSrc, `SELECT * FROM ${ tableName }`);
+
+        if(results.length > 0) {
+            
+            await insertTableData(poolDest, tableName, results);
+
+        } else {
+            logger.info(`Data from ${ tableSrc } is empty`);
+        }
+
+        logger.info(`Table's data of ${ syncInfo } was sychronized`);
+        return true;
+
+    } catch(err) {
+        logger.error(`Failed to sync table's data ${ syncInfo }`, err);
+        return false;
+    }
+};
+
+module.exports.main = async () => {
+    
+    logger.info("App is starting");
+    const poolSrc = createDbPool(dbConfig.opnimusNewMigrated);
+    const poolDest = createDbPool(dbConfig.opnimusNewMigrated2);
+
+    const tableNames = await getTables(poolSrc);
+    let isSyncSuccess = false;
+
+    for(let i=0; i<tableNames.length; i++) {
+        
+        isSyncSuccess = await this.syncTableStructure(poolSrc, poolDest, tableNames[i]);
+        if(isSyncSuccess) {
+            await this.syncTableData(poolSrc, poolDest, tableNames[i]);
+        }
+
+    }
+
+    closeDbPoolsConnection(poolSrc, poolDest, () => logger.info("App is closing"));
+
+};
+
+const test = async () => {
+    const poolSrc = createDbPool(dbConfig.opnimusNewMigrated);
+    const poolDest = createDbPool(dbConfig.opnimusNewMigrated2);
+    
+    const tableName = "telegram_user";
+    const { results } = await executeQuery(poolSrc, `SELECT * FROM ${ tableName }`);
+    await insertTableData(poolDest, tableName, results, 20);
+
+    closeDbPoolsConnection(poolSrc, poolDest);
+};
+
+/*
+ * Database baru Opnimus V2 belum dapat digunakan
+ */
+// test();
+this.main();

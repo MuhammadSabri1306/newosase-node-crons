@@ -3,7 +3,7 @@ const PrettyStream = require("bunyan-prettystream");
 const path = require("path");
 const fs = require("fs");
 
-const loggerName = "Opnimus Trial KwhCounter";
+const loggerName = "Opnimus Database Migration";
 
 const getLogFilePath = level => {
     const filePath = path.resolve(__dirname, `logs/${ level }.log`);
@@ -23,29 +23,38 @@ const useLogger = () => {
 };
 
 const useDevLogger = () => {
-    const prettyStdOut = new PrettyStream();
-    prettyStdOut.pipe(process.stdout);
-
-    return bunyan.createLogger({
-        name: loggerName,
-        streams: [
-            { level: "trace", type: "raw", stream: prettyStdOut },
-            //   { level: "debug", type: "raw", stream: prettyStdOut },
-            { level: "info", type: "raw", stream: prettyStdOut },
-            { level: "warn", type: "raw", stream: prettyStdOut },
-            { level: "error", type: "raw", stream: prettyStdOut },
-            { level: "fatal", type: "raw", stream: prettyStdOut }
-        ]
-    });
-};
-
-const useDevLogger2 = () => {
     return {
-        trace: (...args) => console.log(...args),
+        debug: (...args) => console.log(...args),
         info: (...args) => console.info(...args),
         warn: (...args) => console.warn(...args),
         error: (...args) => console.error(...args),
         fatal: (...args) => console.error(...args)
+    };
+};
+
+const useDevLogger2 = () => {
+    const defaultLogger = useLogger();
+    return {
+        debug: (...args) => {
+            console.log(...args);
+            defaultLogger.debug(...args);
+        },
+        info: (...args) => {
+            console.info(...args);
+            defaultLogger.info(...args);
+        },
+        warn: (...args) => {
+            console.warn(...args);
+            defaultLogger.warn(...args);
+        },
+        error: (...args) => {
+            console.error(...args);
+            defaultLogger.error(...args);
+        },
+        fatal: (...args) => {
+            console.error(...args);
+            defaultLogger.error(...args);
+        }
     };
 };
 

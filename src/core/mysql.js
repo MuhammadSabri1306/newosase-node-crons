@@ -2,6 +2,12 @@ const mysql = require("mysql");
 
 module.exports.createDbPool = config => mysql.createPool(config);
 
+module.exports.closePool = pool => {
+    return new Promise(resolve => {
+        pool.end(() => resolve());
+    });
+};
+
 module.exports.getConnection = (pool) => {
     const maxRetryCount = 1;
     let retryCount = 0;

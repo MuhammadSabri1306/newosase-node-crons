@@ -5,8 +5,14 @@ const dbConfig = require("../env/database");
 const { useHttp } = require("./http");
 const { toDatetimeString } = require("../helpers/date");
 const { InsertQueryBuilder } = require("../helpers/mysql-query-builder");
-const { createDbPool, executeQuery, selectRowQuery,
-    selectRowCollumnQuery, createQuery } = require("../core/mysql");
+const {
+    createDbPool,
+    closePool,
+    executeQuery,
+    selectRowQuery,
+    selectRowCollumnQuery,
+    createQuery
+} = require("../core/mysql");
 const { createAlarmPortUserQuery, createAlertStack, createPortAlarmQuery } = require("./alerting");
 
 const createWitelGroup = (witelList, portList) => {
@@ -215,7 +221,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
             }, { closePortIds: [], closePortQueries: [] });
 
             const closePortIdsStr = closePortIds.join(",");
-            const closePortQueryStr = closePortQueries.join("; ");
+            const closePortQueryStr = closePortQueries.join(" ");
             logger.info("Closing (update) opened alarm ports", {
                 database: dbConfig.opnimusNewMigrated.database,
                 id: closePortIdsStr,
@@ -359,7 +365,8 @@ module.exports.main = async (applyAlertingMessage = false) => {
     } catch(err) {
         logger.error(err);
     } finally {
-        pool.end(() => logger.info("App has closed"));
+        await closePool(pool);
+        logger.info("App has closed");
     }
 };
 

@@ -1,7 +1,9 @@
+const logger = require("./logger");
 const TelegramText = require("../core/telegram-text");
 const { extractDate } = require("../helpers/date");
 const { toFixedNumber } = require("../helpers/number-format");
 const { createQuery } = require("../core/mysql");
+const { isPortUserMatch } = require("./rules");
 
 module.exports.createPortAlarmQuery = (lastAlarmId) => {
     let alarmPortQueryStr = "SELECT port.*, rtu.name AS rtu_name, rtu.location_id,"+
@@ -54,39 +56,70 @@ const createAlarmPortUserQueryBackup = ({ regionalIds, witelIds, locationIds }) 
     };
 };
 
+class RawQueryBuilder {
+    constructor() {
+        this.queries = [];
+        this.params = [];
+    }
+    
+    add(query, ...bindedParams) {
+        let queryStr = null;
+        if(typeof query == "function")
+            queryStr = query();
+        else if(typeof query == "string")
+            queryStr = query;
+        
+        if(!queryStr || typeof queryStr != "string")
+            return this;
+        
+        this.queries.push(queryStr);
+        if(Array.isArray(bindedParams) && bindedParams.length > 0) {
+            bindedParams.forEach(item => this.params.push(item));
+        }
+
+        return this;
+    }
+    
+    buildQuery(callback) {
+        const query = this.queries.length > 0 ? this.queries.join(" ") : "";
+        const params = this.params;
+        return callback(query, params);
+    }
+}
+
 module.exports.createAlarmPortUserQuery = ({ regionalIds, witelIds, locationIds }) => {
-    // user query
-    const queryUserParams = [];
-    const queryUserParamsBind = [];
 
-    queryUserParams.push("(is_pic=? AND alert_status=? AND level=?)");
-    queryUserParamsBind.push(0, 1, "nasional");
+    const queryUser = (new RawQueryBuilder())
+        .add("SELECT user.*, mode.id AS mode_id, mode.rules, mode.apply_rules_file, mode.rules_file")
+        .add("FROM alert_users as alert JOIN telegram_user as user ON user.id=alert.telegram_user_id")
+        .add("JOIN alert_modes AS mode ON mode.id=alert.mode_id WHERE")
+        .add("(alert.cron_alert_status=1 AND alert.user_alert_status=1) AND (")
+        .add("(user.is_pic=0 AND level='nasional')")
+        .add(
+            (regionalIds.length < 1) ? null : "OR (user.is_pic=0 AND level='regional' AND user.regional_id IN (?))",
+            regionalIds
+        )
+        .add(
+            (witelIds.length < 1) ? null : "OR (user.is_pic=0 AND level='witel' AND user.witel_id IN (?))",
+            witelIds
+        )
+        .add(") ORDER BY user.regist_id");
+    const user = queryUser.buildQuery((query, params) => createQuery(query, params));
 
-    if(regionalIds.length > 0) {
-        queryUserParams.push("(is_pic=? AND alert_status=? AND level=? AND regional_id IN (?))");
-        queryUserParamsBind.push(0, 1, "regional", regionalIds);
-    }
+    const queryPic = (new RawQueryBuilder())
+        .add("SELECT user.id, user.user_id, user.type, user.username, user.first_name, user.last_name,")
+        .add("pers.nama AS full_name, pic.location_id, mode.id AS mode_id, mode.rules, mode.apply_rules_file,")
+        .add("mode.rules_file FROM pic_location AS pic")
+        .add("JOIN telegram_user AS user ON user.id=pic.user_id")
+        .add("JOIN telegram_personal_user AS pers ON pers.user_id=pic.user_id")
+        .add("JOIN alert_users as alert ON alert.telegram_user_id=user.id")
+        .add("JOIN alert_modes AS mode ON mode.id=alert.mode_id")
+        .add("WHERE user.is_pic=1 AND alert.cron_alert_status=1 AND alert.user_alert_status=1")
+        .add(locationIds.length < 1 ? null : "AND pic.location_id IN (890)", locationIds)
+        .add("ORDER BY user.pic_regist_id");
+    const pic = queryPic.buildQuery((query, params) => createQuery(query, params));
 
-    if(witelIds.length > 0) {
-        queryUserParams.push("(is_pic=? AND alert_status=? AND level=? AND witel_id IN (?))");
-        queryUserParamsBind.push(0, 1, "witel", witelIds);
-    }
-
-    const queryUserParamsStr = queryUserParams.join(" OR ");
-    const queryUserStr = `SELECT * FROM telegram_user WHERE ${ queryUserParamsStr } ORDER BY regional_id, witel_id`;
-
-    // pic query
-    const queryPicStr = "SELECT user.id, user.user_id, user.type, user.username, user.first_name,"+
-        " user.last_name, pers.nama AS full_name, pic.location_id FROM pic_location AS pic"+
-        " JOIN telegram_user AS user ON user.id=pic.user_id"+
-        " JOIN telegram_personal_user AS pers ON pers.user_id=pic.user_id"+
-        " WHERE user.is_pic=? AND alert_status=? AND pic.location_id IN (?)";
-    const queryPicParamsBind = [1, 1, locationIds];
-
-    return {
-        user: createQuery(queryUserStr, queryUserParamsBind),
-        pic: createQuery(queryPicStr, queryPicParamsBind)
-    };
+    return { user, pic };
 };
 
 const getAlertIcon = (alarm) => {
@@ -227,6 +260,18 @@ module.exports.createAlertStack = (alarmPorts, alarmPortUsers, alarmPortPics) =>
     let picList; let isUserMatch;
     let i = 0; let j = 0; let k = 0; let l = 0;
 
+    let isPassingRules = false;
+
+    let pic = {};
+    let picRules;
+    let picApplyRulesFile;
+    let picRulesFile;
+
+    let user = {};
+    let userRules;
+    let userApplyRulesFile;
+    let userRulesFile;
+
     const pushAlertStack = (alarm, picList, chatId) => {
         alertStack.push({
             alarmId: alarm.id,
@@ -252,7 +297,19 @@ module.exports.createAlertStack = (alarmPorts, alarmPortUsers, alarmPortPics) =>
         l = 0;
         while(l < picList.length) {
 
-            pushAlertStack(alarmPorts[i], picList, picList[l].user_id);
+            pic = picList[l];
+            try {
+                picRules = pic && pic.rules ? pic.rules : null;
+                picApplyRulesFile = pic && pic.apply_rules_file ? pic.apply_rules_file : null;
+                picRulesFile = pic && pic.rules_file ? pic.rules_file : null;
+                isPassingRules = isPortUserMatch(alarmPorts[i], picRules, picApplyRulesFile, picRulesFile);
+            } catch(err) {
+                logger.error("Error when checking pic port rules", pic, alarmPorts[i], err);
+                isPassingRules = false;
+            }
+
+            if(isPassingRules)
+                pushAlertStack(alarmPorts[i], picList, pic.user_id);
             l++;
 
         }
@@ -261,17 +318,30 @@ module.exports.createAlertStack = (alarmPorts, alarmPortUsers, alarmPortPics) =>
         k = 0;
         while(k < alarmPortUsers.length) {
 
+            user = alarmPortUsers[k];
             isUserMatch = false;
 
-            if(alarmPortUsers[k].level == "witel" && alarmPortUsers[k].witel_id == alarmPorts[i].witel_id)
+            if(user.level == "witel" && user.witel_id == alarmPorts[i].witel_id)
                 isUserMatch = true;
-            else if(alarmPortUsers[k].level == "regional" && alarmPortUsers[k].regional_id == alarmPorts[i].regional_id)
+            else if(user.level == "regional" && user.regional_id == alarmPorts[i].regional_id)
                 isUserMatch = true;
-            else if(alarmPortUsers[k].level == "nasional")
+            else if(user.level == "nasional")
                 isUserMatch = true;
 
-            if(isUserMatch)
-                pushAlertStack(alarmPorts[i], picList, alarmPortUsers[k].chat_id);
+            if(isUserMatch) {
+                try {
+                    userRules = user && user.rules ? user.rules : null;
+                    userApplyRulesFile = user && user.apply_rules_file ? user.apply_rules_file : null;
+                    userRulesFile = user && user.rules_file ? user.rules_file : null;
+                    isPassingRules = isPortUserMatch(alarmPorts[i], userRules, userApplyRulesFile, userRulesFile);
+                } catch(err) {
+                    logger.error("Error when checking user port rules", user, alarmPorts[i], err);
+                    isPassingRules = false;
+                }
+    
+                if(isPassingRules)
+                    pushAlertStack(alarmPorts[i], picList, user.chat_id);
+            }
             k++;
 
         }

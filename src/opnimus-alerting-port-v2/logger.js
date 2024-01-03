@@ -23,25 +23,9 @@ const useLogger = () => {
 };
 
 const useDevLogger = () => {
-    const prettyStdOut = new PrettyStream();
-    prettyStdOut.pipe(process.stdout);
-
-    return bunyan.createLogger({
-        name: loggerName,
-        streams: [
-            { level: "trace", type: "raw", stream: prettyStdOut },
-            //   { level: "debug", type: "raw", stream: prettyStdOut },
-            { level: "info", type: "raw", stream: prettyStdOut },
-            { level: "warn", type: "raw", stream: prettyStdOut },
-            { level: "error", type: "raw", stream: prettyStdOut },
-            { level: "fatal", type: "raw", stream: prettyStdOut }
-        ]
-    });
-};
-
-const useDevLogger2 = () => {
     return {
         trace: (...args) => console.log(...args),
+        debug: (...args) => console.log(...args),
         info: (...args) => console.info(...args),
         warn: (...args) => console.warn(...args),
         error: (...args) => console.error(...args),
@@ -95,4 +79,4 @@ const readLogFile = level => {
 };
 
 module.exports = useLogger();
-// module.exports = useDevLogger2();
+// module.exports = useDevLogger();

@@ -1,87 +1,136 @@
+const logger = require("./logger");
 const dbConfig = require("../env/database");
-const { createDbPool, executeQuery, selectRowQuery,
-    selectRowCollumnQuery, createQuery } = require("../core/mysql");
-const apiData = require("./sample-data/newosase-port-alert.json");
+const { toDatetimeString } = require("../helpers/date");
+const { createDbPool, closePool, executeQuery } = require("../core/mysql");
+const { createAlarmPortUserQuery, createPortAlarmQuery } = require("./alerting");
 
-const filterApiPortExclude = portList => {
-    const result = [];
-    const c = {};
-    for(let i=0; i<portList.length; i++) {
+const extractAlarmPortAreaIds = (alarmPorts) => {
+    const regionalIds = [];
+    const witelIds = [];
+    const locIds = [];
+    for(let i=0; i<alarmPorts.length; i++) {
 
-        c.hasName = portList[i].port_name ? true : false;
-        c.hasValidCode = portList[i].no_port && portList[i].no_port !== "many" ? true : false;
-        c.notDuplicated = result.findIndex(item => item.rtu_sname == portList[i].rtu_sname) < 0;
 
-        if(c.hasName && c.hasValidCode && c.notDuplicated)
-            result.push(portList[i]);
+        if(regionalIds.indexOf(alarmPorts[i].regional_id) < 0)
+            regionalIds.push(alarmPorts[i].regional_id);
+
+        if(witelIds.indexOf(alarmPorts[i].witel_id) < 0)
+            witelIds.push(alarmPorts[i].witel_id);
+
+        if(locIds.indexOf(alarmPorts[i].location_id) < 0)
+            locIds.push(alarmPorts[i].location_id);
+
     }
-    return result;
+    return { regionalIds, witelIds, locationIds: locIds };
 };
 
-const isPortMatch = (apiItem, dbItem) => {
-    if(dbItem.rtu_sname != apiItem.rtu_sname)
-        return false;
-    if(dbItem.port_no != apiItem.no_port)
-        return false;
-    if(dbItem.port_unit != apiItem.units)
-        return false;
-    return true;
-};
+const main = async (applyAlertingMessage = false) => {
+    logger.info("App is starting");
+    const processDateStr = toDatetimeString(new Date());
 
-const createPortCategory = (apiData, dbData) => {
-    const openAlarm = [];
-    const closeAlarm = [];
-    let hasMatches = false;
-    let isMatch; let isNormal; let isChanged;
-
-    for(let i=0; i<apiData.length; i++) {
-        
-        hasMatches = false;
-        for(let j=0; j<dbData.length; j++) {
-            
-            isMatch = isPortMatch(apiData[i], dbData[j]);
-            isChanged = isMatch && apiData[i].severity.name.toString().toLowerCase() != dbData[j].port_severity;
-            isNormal = isChanged && apiData[i].severity.name.toString().toLowerCase() == "normal";
-            if(isChanged) {
-                closeAlarm.push(dbData[j]);
-                if(!isNormal)
-                    openAlarm.push(apiData[i]);
-            }
-
-            if(isMatch && !hasMatches)
-                hasMatches = true;
-
-        }
-
-        if(!hasMatches)
-            openAlarm.push(apiData[i]);
-    }
-
-    return { openAlarm, closeAlarm };
-};
-
-const main = async () => {
-    
+    logger.info("Creating a database connection");
     const pool = createDbPool({
-        ...dbConfig.opnimusNewMigrated,
+        ...dbConfig.opnimusNewMigrated2,
         multipleStatements: true
     });
-    
+
     try {
 
-        const portListQueryStr = "SELECT alarm.*, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id"+
-            " FROM alarm_port_status AS alarm JOIN rtu_list AS rtu ON rtu.sname=alarm.rtu_sname"+
-            " WHERE alarm.is_closed=0";
-        const { results: portList } = await executeQuery(pool, portListQueryStr);
-        const portStatusNew = apiData.result.payload;
-        const { openAlarm, closeAlarm } = createPortCategory(filterApiPortExclude(portStatusNew), portList);
-        console.log({ openAlarm, closeAlarm });
+        
+        const lastPortId = '36179';
+        const alarmPortQueryStr = createPortAlarmQuery(lastPortId);
+        logger.info("Get inserted alarm_port_status id from database", {
+            database: dbConfig.opnimusNewMigrated2.database,
+            query: alarmPortQueryStr
+        });
+
+        const alarmPortQuery = await executeQuery(pool, alarmPortQueryStr);
+        if(alarmPortQuery.results)
+            alarmPorts = alarmPortQuery.results;
+        
+        
+        const { regionalIds, witelIds, locationIds } = extractAlarmPortAreaIds(alarmPorts);
+        const { user: alarmPortUserQuery, pic: alarmPortPicQuery } = createAlarmPortUserQuery({ regionalIds, witelIds, locationIds });
+
+        logger.info("Get user of port alarm from database", {
+            database: dbConfig.opnimusNewMigrated2.database,
+            query: alarmPortUserQuery
+        });
+        const { results: alarmPortUsers } = await executeQuery(pool, alarmPortUserQuery);
+
+        logger.info("Get user of port alarm from database", {
+            database: dbConfig.opnimusNewMigrated2.database,
+            query: alarmPortPicQuery
+        });
+        const { results: alarmPortPics } = await executeQuery(pool, alarmPortPicQuery);
+
+        console.log(alarmPortUsers, alarmPortPics);
 
     } catch(err) {
-        console.error(err);
+        logger.error(err);
     } finally {
-        pool.end();
+        await closePool(pool);
+        logger.info("App has closed");
     }
 };
 
 main();
+
+/*
+====================================================================================
+===========> alarmPortUserQuery
+
+SELECT * FROM telegram_user
+WHERE
+	(is_pic=0 AND alert_status=1 AND level='nasional')
+	OR (is_pic=0 AND alert_status=1 AND level='regional' AND regional_id IN (4))
+	OR (is_pic=0 AND alert_status=1 AND level='witel' AND witel_id IN (106))
+ORDER BY regional_id, witel_id
+
+
+SELECT
+	user.*, mode.id AS mode_id, mode.rules,
+	mode.apply_rules_file, mode.rules_file
+FROM alert_users as alert
+JOIN telegram_user as user ON user.id=alert.telegram_user_id
+JOIN alert_modes AS mode ON mode.id=alert.mode_id
+WHERE
+	(alert.cron_alert_status=1 AND alert.user_alert_status=1)
+    AND (
+        (user.is_pic=0 AND level='nasional')
+        OR (user.is_pic=0 AND level='regional' AND user.regional_id IN (2))
+        OR (user.is_pic=0 AND level='witel' AND user.witel_id IN (43))
+    )
+ORDER BY user.regist_id;
+
+
+====================================================================================
+===========> alarmPortPicQuery
+
+SELECT
+	user.id, user.user_id, user.type, user.username, user.first_name, user.last_name,
+	pers.nama AS full_name,
+	pic.location_id
+FROM pic_location AS pic
+JOIN telegram_user AS user ON user.id=pic.user_id
+JOIN telegram_personal_user AS pers ON pers.user_id=pic.user_id
+WHERE user.is_pic=1 AND alert_status=1 AND pic.location_id IN (890)
+
+
+SELECT
+	user.id, user.user_id, user.type, user.username, user.first_name, user.last_name,
+	pers.nama AS full_name,
+	pic.location_id,
+    mode.id AS mode_id, mode.rules, mode.apply_rules_file, mode.rules_file
+FROM pic_location AS pic
+JOIN telegram_user AS user ON user.id=pic.user_id
+JOIN telegram_personal_user AS pers ON pers.user_id=pic.user_id
+JOIN alert_users as alert ON alert.telegram_user_id=user.id
+JOIN alert_modes AS mode ON mode.id=alert.mode_id
+WHERE
+	user.is_pic=1 AND alert.cron_alert_status=1 AND alert.user_alert_status=1 AND pic.location_id IN (890)
+ORDER BY user.pic_regist_id
+
+
+
+*/

@@ -27,7 +27,7 @@ const closeDbPoolsConnection = (poolDbOld, poolDbNew, callback = null) => {
         poolDbOld.end(() => poolDbNew.end());
 };
 
-const getPoolDbName = pool => pool.config.connectionConfig?.database || null;
+const getPoolDbName = pool => pool.config.connectionConfig.database || null;
 
 const getTables = async (pool) => {
     logger.info(`Get all tables name from ${ getPoolDbName(pool) }`);
@@ -205,8 +205,14 @@ module.exports.syncTableData = async (poolSrc, poolDest, tableName, idField = "i
 module.exports.main = async () => {
     
     logger.info("App is starting");
-    const poolSrc = createDbPool(dbConfig.opnimusNewMigrated);
-    const poolDest = createDbPool(dbConfig.opnimusNewMigrated2);
+    
+    const dbOpnimusNewMigrated = JSON.parse(JSON.stringify(dbConfig.opnimusNewMigrated));
+    const dbOpnimusNewMigrated2 = JSON.parse(JSON.stringify(dbConfig.opnimusNewMigrated2));
+    dbOpnimusNewMigrated.database = "juan5684_opnimus_new_bot";
+    dbOpnimusNewMigrated2.database = "juan5684_opnimus_new_bot";
+
+    const poolSrc = createDbPool(dbOpnimusNewMigrated);
+    const poolDest = createDbPool(dbOpnimusNewMigrated2);
 
     const tableNames = await getTables(poolSrc);
     let isSyncSuccess = false;
@@ -225,8 +231,14 @@ module.exports.main = async () => {
 };
 
 const test = async () => {
-    const poolSrc = createDbPool(dbConfig.opnimusNewMigrated);
-    const poolDest = createDbPool(dbConfig.opnimusNewMigrated2);
+    const dbOpnimusNewMigrated = JSON.parse(JSON.stringify(dbConfig.opnimusNewMigrated));
+    const dbOpnimusNewMigrated2 = JSON.parse(JSON.stringify(dbConfig.opnimusNewMigrated2));
+    dbOpnimusNewMigrated.database = "juan5684_opnimus_new_bot";
+    dbOpnimusNewMigrated2.database = "juan5684_opnimus_new_bot";
+
+    const poolSrc = createDbPool(dbOpnimusNewMigrated);
+    const poolDest = createDbPool(dbOpnimusNewMigrated2);
+
     
     const tableName = "telegram_user";
     const { results } = await executeQuery(poolSrc, `SELECT * FROM ${ tableName }`);

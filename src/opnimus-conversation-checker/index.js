@@ -17,7 +17,7 @@ module.exports.main = async () => {
 
     logger.info("Creating a database connection");
     const pool = createDbPool({
-        ...dbConfig.opnimusNewMigrated,
+        ...dbConfig.opnimusNewMigrated2,
         multipleStatements: true
     });
 

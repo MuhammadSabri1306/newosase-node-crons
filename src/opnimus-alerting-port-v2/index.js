@@ -129,7 +129,7 @@ const onAlertSuccess = async (pool, sendedAlertIds) => {
     updateSuccessAlertQueryStr = createQuery(updateSuccessAlertQueryStr, ["success", sendedAlertIds]);
 
     logger.info("Update alert success status in database", {
-        database: dbConfig.opnimusNewMigrated.database,
+        database: dbConfig.opnimusNewMigrated2.database,
         query: updateSuccessAlertQueryStr
     });
     try {
@@ -147,7 +147,7 @@ const onAlertUnsended = async (pool, alertId, alertErr) => {
         updateUnsendedAlertQueryStr = createQuery(updateUnsendedAlertQueryStr, ["unsended", item.alertId]);
         
         logger.info("Update alert unsended status in database", {
-            database: dbConfig.opnimusNewMigrated.database,
+            database: dbConfig.opnimusNewMigrated2.database,
             query: updateUnsendedAlertQueryStr
         });
         await executeQuery(pool, updateUnsendedAlertQueryStr);
@@ -161,7 +161,7 @@ const onAlertUnsended = async (pool, alertId, alertErr) => {
             ]);
 
             logger.info("Alert error has description, push alert error to database", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 query: insertErrorQueryStr
             });
             await executeQuery(pool, insertErrorQueryStr);
@@ -179,7 +179,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
 
     logger.info("Creating a database connection");
     const pool = createDbPool({
-        ...dbConfig.opnimusNewMigrated,
+        ...dbConfig.opnimusNewMigrated2,
         multipleStatements: true
     });
 
@@ -188,7 +188,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
         const witelListQueryStr = "SELECT * FROM witel";
         // const witelListQueryStr = "SELECT * FROM witel WHERE id=43";
         logger.info("Get witel list from database", {
-            database: dbConfig.opnimusNewMigrated.database,
+            database: dbConfig.opnimusNewMigrated2.database,
             query: witelListQueryStr
         });
 
@@ -198,7 +198,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
             " FROM alarm_port_status AS alarm JOIN rtu_list AS rtu ON rtu.sname=alarm.rtu_sname"+
             " WHERE alarm.is_closed=0";
         logger.info("Get opened alarm port list", {
-            database: dbConfig.opnimusNewMigrated.database,
+            database: dbConfig.opnimusNewMigrated2.database,
             query: portListQueryStr
         });
 
@@ -223,7 +223,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
             const closePortIdsStr = closePortIds.join(",");
             const closePortQueryStr = closePortQueries.join(" ");
             logger.info("Closing (update) opened alarm ports", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 id: closePortIdsStr,
                 query: closePortQueryStr
             });
@@ -237,7 +237,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
 
             const lastPortQueryStr = "SELECT id FROM alarm_port_status ORDER BY id DESC LIMIT 1";
             logger.info("Get last alarm_port_status id from database", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 query: lastPortQueryStr
             });
 
@@ -272,14 +272,14 @@ module.exports.main = async (applyAlertingMessage = false) => {
 
             const openPortQueryStr = createQuery(queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
             logger.info("Open (insert) new alarm ports", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 query: openPortQueryStr
             });
             await executeQuery(pool, openPortQueryStr);
 
             const alarmPortQueryStr = createPortAlarmQuery(lastPortId);
             logger.info("Get inserted alarm_port_status id from database", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 query: alarmPortQueryStr
             });
 
@@ -289,26 +289,32 @@ module.exports.main = async (applyAlertingMessage = false) => {
 
         }
 
-        let sendedAlertIds = [];
-        let unsendedAlerts = [];
+        let alertStack = [];
         if(applyAlertingMessage && alarmPorts.length > 0) {
 
             const { regionalIds, witelIds, locationIds } = extractAlarmPortAreaIds(alarmPorts);
             const { user: alarmPortUserQuery, pic: alarmPortPicQuery } = createAlarmPortUserQuery({ regionalIds, witelIds, locationIds });
 
             logger.info("Get user of port alarm from database", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 query: alarmPortUserQuery
             });
             const { results: alarmPortUsers } = await executeQuery(pool, alarmPortUserQuery);
 
             logger.info("Get user of port alarm from database", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 query: alarmPortPicQuery
             });
             const { results: alarmPortPics } = await executeQuery(pool, alarmPortPicQuery);
             
-            const alertStack = createAlertStack(alarmPorts, alarmPortUsers, alarmPortPics);
+            alertStack = createAlertStack(alarmPorts, alarmPortUsers, alarmPortPics);
+
+        }
+
+        let sendedAlertIds = [];
+        let unsendedAlerts = [];
+        if(alertStack.length > 0) {
+
             const queryInsertAlert = new InsertQueryBuilder("alert_message");
             queryInsertAlert.addFields("port_id");
             queryInsertAlert.addFields("chat_id");
@@ -325,7 +331,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
 
             const insertAlertQueryStr = createQuery(queryInsertAlert.getQuery(), queryInsertAlert.getBuiltBindData());
             logger.info("Write new alert to database", {
-                database: dbConfig.opnimusNewMigrated.database,
+                database: dbConfig.opnimusNewMigrated2.database,
                 query: insertAlertQueryStr
             });
 
@@ -370,17 +376,27 @@ module.exports.main = async (applyAlertingMessage = false) => {
     }
 };
 
+const offTimer = (ms) => {
+    return new Promise(resolve => {
+        setTimeout(() => resolve(), ms);
+    });
+};
+
 const runCron = async () => {
     const startTime = toDatetimeString(new Date());
     console.info(`\n\nRunning cron Opnimus Alerting Port V2 at ${ startTime }`);
-    try {
-        await this.main(true);
-        const endTime = toDatetimeString(new Date());
-        console.info(`\n\nCron Opnimus Alerting Port V2 closed at ${ endTime }`);
-    } catch(err) {
-        logger.error(err);
-        const endTime = toDatetimeString(new Date());
-        console.info(`\n\nCron Opnimus Alerting Port V2 closed at ${ endTime }`);
+    while(true) {
+        try {
+            await this.main(true);
+            const endTime = toDatetimeString(new Date());
+            console.info(`\n\nCron Opnimus Alerting Port V2 closed at ${ endTime }`);
+        } catch(err) {
+            console.error(err);
+            const endTime = toDatetimeString(new Date());
+            console.info(`\n\nCron Opnimus Alerting Port V2 closed at ${ endTime }`);
+        } finally {
+            await offTimer(1000);
+        }
     }
 };
 
@@ -388,4 +404,5 @@ const runCron = async () => {
  * Opnimus Alerting Port
  * Runs every 2 minutes
  */
-cron.schedule("*/2 * * * *", runCron);
+// cron.schedule("*/2 * * * *", runCron);
+runCron();

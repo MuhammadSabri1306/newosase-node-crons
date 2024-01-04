@@ -5,7 +5,9 @@ const { toFixedNumber } = require("../helpers/number-format");
 const { createQuery } = require("../core/mysql");
 const { isPortUserMatch } = require("./rules");
 
-module.exports.createPortAlarmQuery = (lastAlarmId) => {
+module.exports.createPortAlarmQuery = (alarmIds) => {
+    if(!Array.isArray(alarmIds) || alarmIds.length < 1)
+        return null;
     let alarmPortQueryStr = "SELECT port.*, rtu.name AS rtu_name, rtu.location_id,"+
         " loc.location_name, rtu.datel_id, rtu.witel_id, wit.witel_name,"+
         " rtu.regional_id, reg.name AS regional_name, reg.divre_code AS regional_code"+
@@ -13,13 +15,9 @@ module.exports.createPortAlarmQuery = (lastAlarmId) => {
         " JOIN rtu_list AS rtu ON rtu.sname=port.rtu_sname"+
         " JOIN rtu_location AS loc ON loc.id=rtu.location_id"+
         " JOIN witel AS wit ON wit.id=rtu.witel_id"+
-        " JOIN regional AS reg ON reg.id=rtu.regional_id";
-    if(lastAlarmId) {
-        alarmPortQueryStr += " WHERE port.id>?";
-        alarmPortQueryStr = createQuery(alarmPortQueryStr, [lastAlarmId]);
-    }
-
-    return alarmPortQueryStr;
+        " JOIN regional AS reg ON reg.id=rtu.regional_id"+
+        " WHERE port.id IN (?)";
+    return createQuery(alarmPortQueryStr, [alarmIds]);
 };
 
 const createAlarmPortUserQueryBackup = ({ regionalIds, witelIds, locationIds }) => {

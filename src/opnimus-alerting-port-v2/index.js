@@ -14,6 +14,7 @@ const {
     createQuery
 } = require("../core/mysql");
 const { createAlarmPortUserQuery, createAlertStack, createPortAlarmQuery } = require("./alerting");
+const { logErrorWithFilter } = require("./log-error");
 
 const createWitelGroup = (witelList, portList) => {
     const group = [];
@@ -275,17 +276,25 @@ module.exports.main = async (applyAlertingMessage = false) => {
                 database: dbConfig.opnimusNewMigrated2.database,
                 query: openPortQueryStr
             });
-            await executeQuery(pool, openPortQueryStr);
+            const insertAlarmQuery = await executeQuery(pool, openPortQueryStr);
+            const alarmIds = queryInsertAlert.buildInsertedId(
+                insertAlarmQuery.results.insertId,
+                insertAlarmQuery.results.affectedRows
+            );
 
-            const alarmPortQueryStr = createPortAlarmQuery(lastPortId);
-            logger.info("Get inserted alarm_port_status id from database", {
-                database: dbConfig.opnimusNewMigrated2.database,
-                query: alarmPortQueryStr
-            });
+            if(alarmIds.length > 0) {
 
-            const alarmPortQuery = await executeQuery(pool, alarmPortQueryStr);
-            if(alarmPortQuery.results)
-                alarmPorts = alarmPortQuery.results;
+                const alarmPortQueryStr = createPortAlarmQuery(alarmIds);
+                logger.info("Get inserted alarm_port_status id from database", {
+                    database: dbConfig.opnimusNewMigrated2.database,
+                    query: alarmPortQueryStr
+                });
+    
+                const alarmPortQuery = await executeQuery(pool, alarmPortQueryStr);
+                if(alarmPortQuery.results)
+                    alarmPorts = alarmPortQuery.results;
+            
+            }
 
         }
 
@@ -369,10 +378,14 @@ module.exports.main = async (applyAlertingMessage = false) => {
         }
 
     } catch(err) {
-        logger.error(err);
+
+        logErrorWithFilter(err);
+
     } finally {
+
         await closePool(pool);
         logger.info("App has closed");
+
     }
 };
 

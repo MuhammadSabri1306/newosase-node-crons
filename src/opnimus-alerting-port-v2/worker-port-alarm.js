@@ -95,6 +95,21 @@ const createPortCategory = (apiData, dbData) => {
             openAlarm.push(apiData[i]);
     }
 
+    for(let x=0; x<dbData.length; x++) {
+        
+        hasMatches = false;
+        for(let y=0; y<openAlarm.length; y++) {
+            if( isPortMatch(openAlarm[y], dbData[x]) ) {
+                hasMatches = true;
+                y = openAlarm.length;
+            }
+        }
+
+        if(!hasMatches)
+            closeAlarm.push(dbData[x]);
+
+    }
+
     return { openAlarm, closeAlarm };
 };
 

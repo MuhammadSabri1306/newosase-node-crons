@@ -1,0 +1,70 @@
+{
+    "dbData": [
+        {
+            "id": 295558,
+            "port_no": "A-40",
+            "port_name": "DC Voltage Battere Starter DEG  24 V",
+            "port_value": 28,
+            "port_unit": "V",
+            "port_severity": "critical",
+            "type": "port",
+            "location": "BALAIKOTA",
+            "rtu_sname": "RTU00-D7-BAL",
+            "rtu_status": "alert",
+            "is_closed": 0,
+            "opened_at": "2024-01-05 11:05:07",
+            "closed_at": null
+        }
+    ],
+    "apiData": {
+        "code": 200,
+        "message": "Request was successfully processed and returned",
+        "result": {
+            "perPage": "all",
+            "lastPage": 1,
+            "totalData": 1224,
+            "payload": [
+                {
+                    "result_type": "port",
+                    "rtu_id": "1092",
+                    "rtu_name": "RTU STO BALAIKOTA 1",
+                    "rtu_sname": "RTU00-D7-BAL",
+                    "ip_rtu": "10.145.2.41",
+                    "rtu_status": "alert",
+                    "regional": "DIVISI REGIONAL 7 KAWASAN TIMUR INDONESIA",
+                    "witel": "WITEL MAKASSAR",
+                    "location": "BALAIKOTA",
+                    "id": "33712",
+                    "port_name": "DC Voltage Battere Starter DEG  24 V",
+                    "no_port": "A-40",
+                    "metrics": "RTU00_D7_BAL_DEG_VDC_ST24_A_40",
+                    "description": "DEG1.Volt.BattStater BALAI KOTA",
+                    "units": "V",
+                    "created_at": "1690267322815",
+                    "updated_at": "1699856994544",
+                    "created_by": null,
+                    "updated_by": "MUHAMMAD SABRI",
+                    "identifier": "DEG_VDC_ST24",
+                    "severity": {
+                        "id_m_port": "12",
+                        "rule": "val > 27 or val < 21",
+                        "id": "2",
+                        "severity": "Warning",
+                        "colors": "#F9C747",
+                        "name": "Warning"
+                    },
+                    "treshold": [
+                        {
+                            "id_m_port": "12",
+                            "rule": "val > 27 or val < 21",
+                            "id": "2",
+                            "severity": "Warning",
+                            "colors": "#F9C747"
+                        }
+                    ],
+                    "value": 27.8
+                }
+            ]
+        }
+    }
+}

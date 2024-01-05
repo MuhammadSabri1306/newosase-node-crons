@@ -114,7 +114,7 @@ module.exports.createAlarmPortUserQuery = ({ regionalIds, witelIds, locationIds 
         .add("JOIN alert_users as alert ON alert.telegram_user_id=user.id")
         .add("JOIN alert_modes AS mode ON mode.id=alert.mode_id")
         .add("WHERE user.is_pic=1 AND alert.cron_alert_status=1 AND alert.user_alert_status=1")
-        .add(locationIds.length < 1 ? null : "AND pic.location_id IN (890)", locationIds)
+        .add(locationIds.length < 1 ? null : "AND pic.location_id IN (?)", locationIds)
         .add("ORDER BY user.pic_regist_id");
     const pic = queryPic.buildQuery((query, params) => createQuery(query, params));
 

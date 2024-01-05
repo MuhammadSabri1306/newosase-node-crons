@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const logger = require("./logger");
+const { logErrorWithFilter } = require("./log-error");
 
 module.exports.extractRulesKey = rules => {
 	const regex = /{{\s*([^\s{}]+)\s*}}/g;
@@ -39,15 +40,17 @@ module.exports.isRulesFileMatch = (port, rulesFile) => {
             this.externalRules[rulesFile] = rulesChecker;
         }
     } catch(err) {
-        logger.error("Failed to load external rules, false given", err);
+        logErrorWithFilter("Failed to load external rules, false given", err);
         rulesChecker = port => false;
     }
     return rulesChecker(port);
 };
 
 module.exports.isPortUserMatch = (port, rules, applyRulesFile, rulesFile) => {
-    if(!applyRulesFile)
+    applyRulesFile = Boolean(applyRulesFile);
+    if(applyRulesFile)
         return this.isRuleMatch(port, rules);
+    console.log(!applyRulesFile)
     return this.isRulesFileMatch(port, rulesFile);
 }
 

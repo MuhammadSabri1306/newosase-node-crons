@@ -55,9 +55,9 @@ module.exports.isErrorExists = (err) => {
     }
 };
 
-module.exports.logErrorWithFilter = (err) => {
-    if(!this.isErrorExists(err)) {
+module.exports.logErrorWithFilter = (...errArgs) => {
+    if(!this.isErrorExists(errArgs[0])) {
         console.log("Error captured.");
-        logger.error(err);
+        logger.error(...errArgs);
     }
 };

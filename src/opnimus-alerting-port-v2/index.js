@@ -136,7 +136,7 @@ const onAlertSuccess = async (pool, sendedAlertIds) => {
     try {
         await executeQuery(pool, updateSuccessAlertQueryStr);
     } catch(err) {
-        logger.error(err);
+        logErrorWithFilter(err);
     }
 };
 
@@ -170,7 +170,7 @@ const onAlertUnsended = async (pool, alertId, alertErr) => {
         }
 
     } catch(err) {
-        logger.error(err);
+        logErrorWithFilter(err);
     }
 };
 
@@ -208,7 +208,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
 
         logger.info("Worker Port Alarm started");
         const { openPorts, closePorts } = await runWorkerGetAlarm(witelPortList, err => {
-            logger.error("Error when running worker worker-port-alarm.js:", err);
+            logErrorWithFilter("Error when running worker worker-port-alarm.js:", err);
         });
         logger.info(`Worker Port Alarm run successfully, openPorts:${ openPorts.length }, closePorts:${ closePorts.length }`);
 
@@ -277,7 +277,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
                 query: openPortQueryStr
             });
             const insertAlarmQuery = await executeQuery(pool, openPortQueryStr);
-            const alarmIds = queryInsertAlert.buildInsertedId(
+            const alarmIds = queryInsertPort.buildInsertedId(
                 insertAlarmQuery.results.insertId,
                 insertAlarmQuery.results.affectedRows
             );
@@ -354,7 +354,7 @@ module.exports.main = async (applyAlertingMessage = false) => {
 
             logger.info("Worker Send Alert started.");
             const sendAlertResult = await runWorkerSendAlert(alertStack, err => {
-                logger.error("Error when running worker worker-send-alert.js:", err);
+                logErrorWithFilter("Error when running worker worker-send-alert.js:", err);
             });
 
             sendedAlertIds = sendAlertResult.sendedAlertIds;
@@ -419,3 +419,4 @@ const runCron = async () => {
  */
 // cron.schedule("*/2 * * * *", runCron);
 runCron();
+// this.main(true);

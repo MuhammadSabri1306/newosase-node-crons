@@ -2,6 +2,7 @@ const { parentPort, workerData } = require("worker_threads");
 const logger = require("./logger");
 const { useOpnimusNewBot } = require("../bot/opnimus-new");
 const { catchRetryTime } = require("../helpers/telegram-error");
+const { logErrorWithFilter } = require("./log-error");
 
 const { alert, jobQueueNumber } = workerData;
 const opnimusNewBot = useOpnimusNewBot();
@@ -38,13 +39,13 @@ const sendAlert = async (alert) => {
             if(retryTime <= 0)
                 retryTime = 1000;
 
-            logger.error(`Failed to send alert message on alertId:${ alert.alertId }, retry after:${ retryTime / 1000 }'s`);
-            logger.error(result.error);
+            logErrorWithFilter(`Failed to send alert message on alertId:${ alert.alertId }, retry after:${ retryTime / 1000 }'s`);
+            logErrorWithFilter(result.error);
             await createDelay(retryTime);
 
         } else {
 
-            logger.error(`Failed to send alert message, alertId:${ alert.alertId }`, result.error);
+            logErrorWithFilter(`Failed to send alert message, alertId:${ alert.alertId }`, result.error);
 
         }
 

@@ -4,6 +4,7 @@ const { extractDate } = require("../helpers/date");
 const { toFixedNumber } = require("../helpers/number-format");
 const { createQuery } = require("../core/mysql");
 const { isPortUserMatch } = require("./rules");
+const { logErrorWithFilter } = require("./log-error");
 
 module.exports.createPortAlarmQuery = (alarmIds) => {
     if(!Array.isArray(alarmIds) || alarmIds.length < 1)
@@ -302,7 +303,7 @@ module.exports.createAlertStack = (alarmPorts, alarmPortUsers, alarmPortPics) =>
                 picRulesFile = pic && pic.rules_file ? pic.rules_file : null;
                 isPassingRules = isPortUserMatch(alarmPorts[i], picRules, picApplyRulesFile, picRulesFile);
             } catch(err) {
-                logger.error("Error when checking pic port rules", pic, alarmPorts[i], err);
+                logErrorWithFilter("Error when checking pic port rules", pic, alarmPorts[i], err);
                 isPassingRules = false;
             }
 
@@ -333,7 +334,7 @@ module.exports.createAlertStack = (alarmPorts, alarmPortUsers, alarmPortPics) =>
                     userRulesFile = user && user.rules_file ? user.rules_file : null;
                     isPassingRules = isPortUserMatch(alarmPorts[i], userRules, userApplyRulesFile, userRulesFile);
                 } catch(err) {
-                    logger.error("Error when checking user port rules", user, alarmPorts[i], err);
+                    logErrorWithFilter("Error when checking user port rules", user, alarmPorts[i], err);
                     isPassingRules = false;
                 }
     

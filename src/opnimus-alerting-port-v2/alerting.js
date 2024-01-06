@@ -3,7 +3,7 @@ const TelegramText = require("../core/telegram-text");
 const { extractDate } = require("../helpers/date");
 const { toFixedNumber } = require("../helpers/number-format");
 const { createQuery } = require("../core/mysql");
-const { isPortUserMatch } = require("./rules");
+const { isRuleMatch } = require("./rules");
 const { logErrorWithFilter } = require("./log-error");
 
 module.exports.createPortAlarmQuery = (alarmIds) => {
@@ -256,93 +256,88 @@ const createAlertMessage = (alarm, pics) => {
 module.exports.createAlertStack = (alarmPorts, alarmPortUsers, alarmPortPics) => {
 
     const alertStack = [];
-    let picList; let isUserMatch;
-    let i = 0; let j = 0; let k = 0; let l = 0;
-
-    let isPassingRules = false;
-
-    let pic = {};
-    let picRules;
-    let picApplyRulesFile;
-    let picRulesFile;
-
-    let user = {};
-    let userRules;
-    let userApplyRulesFile;
-    let userRulesFile;
 
     const pushAlertStack = (alarm, picList, chatId) => {
-        alertStack.push({
-            alarmId: alarm.id,
-            chatId,
-            messageText: createAlertMessage(alarm, picList)
-        });
+        const alarmId = alarm.id;
+        const messageText = createAlertMessage(alarm, picList);
+        alertStack.push({ alarmId, chatId, messageText });
     };
+
+    const getAlarmPics = (alarmPortItem, alarmPortPics) => {
+        const pics = []; let i = 0;
+        while(i < alarmPortPics.length) {
+
+            if(alarmPortPics[i].location_id == alarmPortItem.location_id)
+                pics.push(alarmPortPics[i]);
+            i++;
+
+        }
+        return pics;
+    };
+
+    const isUserRulesMatch = (alarmPort, user, errMesage) => {
+        let isMatch = false;
+        try {
+            rules = user.rules;
+            if(rules)
+                isMatch = isRuleMatch(alarmPort, rules);
+        } catch(err) {
+            logErrorWithFilter(errMesage, user, alarmPort, err);
+        } finally {
+            return isMatch;
+        }
+    };
+
+    const isUserMatch = (alarmPortItem, user) => {
+        if(user.level == "nasional")
+            return true;
+        else if(user.level == "regional" && user.regional_id == alarmPortItem.regional_id)
+            return true;
+        else if(user.level == "witel" && user.witel_id == alarmPortItem.witel_id)
+            return true;
+        return false;
+    };
+
+    let picList;
+    let hasAlarmUsers = false;
+    let i = 0;
+    let j = 0;
 
     while(i < alarmPorts.length) {
 
-        // Set PICs per port
-        picList = [];
-        j = 0;
-        while(j < alarmPortPics.length) {
+        hasAlarmUsers = false;
 
-            if(alarmPortPics[j].location_id == alarmPorts[i].location_id)
-                picList.push(alarmPortPics[j]);
+        // Set PICs per port
+        picList = getAlarmPics(alarmPorts[i], alarmPortPics);
+
+        // Push ports per pic
+        j = 0;
+        while(j < picList.length) {
+
+            if( isUserRulesMatch(alarmPorts[i], picList[j], "Error when checking pic port rules") ) {
+                logger.info(`Push pic to alert stack, alarm_port_status.id:${ alarmPorts[i].id }, telegram_user.id:${ picList[j].id }`);
+                pushAlertStack(alarmPorts[i], picList, picList[j].user_id);
+                hasAlarmUsers = true;
+            }
             j++;
 
         }
 
-        // Push ports per pic
-        l = 0;
-        while(l < picList.length) {
-
-            pic = picList[l];
-            try {
-                picRules = pic && pic.rules ? pic.rules : null;
-                picApplyRulesFile = pic && pic.apply_rules_file ? pic.apply_rules_file : null;
-                picRulesFile = pic && pic.rules_file ? pic.rules_file : null;
-                isPassingRules = isPortUserMatch(alarmPorts[i], picRules, picApplyRulesFile, picRulesFile);
-            } catch(err) {
-                logErrorWithFilter("Error when checking pic port rules", pic, alarmPorts[i], err);
-                isPassingRules = false;
+        // Push ports per user
+        j = 0;
+        while(j < alarmPortUsers.length) {
+            if( isUserMatch(alarmPorts[i], alarmPortUsers[j]) ) {
+                if( isUserRulesMatch(alarmPorts[i], alarmPortUsers[j], "Error when checking user port rules") ) {
+                    logger.info(`Push group to alert stack, alarm_port_status.id:${ alarmPorts[i].id }, telegram_user.id:${ alarmPortUsers[j].id }`);
+                    pushAlertStack(alarmPorts[i], picList, alarmPortUsers[j].chat_id);
+                    hasAlarmUsers = true;
+                }
             }
-
-            if(isPassingRules)
-                pushAlertStack(alarmPorts[i], picList, pic.user_id);
-            l++;
-
+            j++;
         }
 
-        // Push ports per user
-        k = 0;
-        while(k < alarmPortUsers.length) {
-
-            user = alarmPortUsers[k];
-            isUserMatch = false;
-
-            if(user.level == "witel" && user.witel_id == alarmPorts[i].witel_id)
-                isUserMatch = true;
-            else if(user.level == "regional" && user.regional_id == alarmPorts[i].regional_id)
-                isUserMatch = true;
-            else if(user.level == "nasional")
-                isUserMatch = true;
-
-            if(isUserMatch) {
-                try {
-                    userRules = user && user.rules ? user.rules : null;
-                    userApplyRulesFile = user && user.apply_rules_file ? user.apply_rules_file : null;
-                    userRulesFile = user && user.rules_file ? user.rules_file : null;
-                    isPassingRules = isPortUserMatch(alarmPorts[i], userRules, userApplyRulesFile, userRulesFile);
-                } catch(err) {
-                    logErrorWithFilter("Error when checking user port rules", user, alarmPorts[i], err);
-                    isPassingRules = false;
-                }
-    
-                if(isPassingRules)
-                    pushAlertStack(alarmPorts[i], picList, user.chat_id);
-            }
-            k++;
-
+        if(!hasAlarmUsers) {
+            logger.info(`Alarm has no users, alarm_port_status.id:${ alarmPorts[i].id }`);
         }
 
         i++;

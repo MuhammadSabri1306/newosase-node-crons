@@ -39,13 +39,14 @@ const sendAlert = async (alert) => {
             if(retryTime <= 0)
                 retryTime = 1000;
 
-            logErrorWithFilter(`Failed to send alert message on alertId:${ alert.alertId }, retry after:${ retryTime / 1000 }'s`);
-            logErrorWithFilter(result.error);
             await createDelay(retryTime);
 
         } else {
 
-            logErrorWithFilter(`Failed to send alert message, alertId:${ alert.alertId }`, result.error);
+            logErrorWithFilter(
+                `Failed to send alert message, alertId:${ alert.alertId }, lastRetryTime:${ retryTime }ms`,
+                result.error
+            );
 
         }
 

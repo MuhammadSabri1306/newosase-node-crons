@@ -16,6 +16,24 @@ const {
 const { createAlarmPortUserQuery, createAlertStack, createPortAlarmQuery } = require("./alerting");
 const { logErrorWithFilter } = require("./log-error");
 
+const createWitelGroup = (witelList, portList) => {
+    const group = [];
+    let item;
+
+    for(let i=0; i<witelList.length; i++) {
+        item = { witelId: witelList[i].id, portList: [] };
+
+        for(let j=0; j<portList.length; j++) {
+            if(portList[j].witel_id == witelList[i].id)
+                item.portList.push(portList[j]);
+        }
+        
+        group.push(item);
+    }
+
+    return group;
+};
+
 const runWorkerGetAlarm = (witelPortList, eachErrorCallback = null) => {
     return new Promise(resolve => {
 
@@ -156,82 +174,73 @@ const onAlertUnsended = async (pool, alertId, alertErr) => {
     }
 };
 
-module.exports.getPortGroupByWitel = async (pool) => {
+module.exports.main = async (applyAlertingMessage = false) => {
+    logger.info("App is starting");
+    const processDateStr = toDatetimeString(new Date());
+
+    logger.info("Creating a database connection");
+    const pool = createDbPool({
+        ...dbConfig.opnimusNewMigrated2,
+        multipleStatements: true
+    });
+
     try {
-        const database = dbConfig.opnimusNewMigrated2.database;
 
         const witelListQueryStr = "SELECT * FROM witel";
         // const witelListQueryStr = "SELECT * FROM witel WHERE id=43";
-        logger.info("Get witel list from database", { database, query: witelListQueryStr });
+        logger.info("Get witel list from database", {
+            database: dbConfig.opnimusNewMigrated2.database,
+            query: witelListQueryStr
+        });
+
         const { results: witelList } = await executeQuery(pool, witelListQueryStr);
 
         const portListQueryStr = "SELECT alarm.*, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id"+
             " FROM alarm_port_status AS alarm JOIN rtu_list AS rtu ON rtu.sname=alarm.rtu_sname"+
             " WHERE alarm.is_closed=0";
-        logger.info("Get opened alarm port list", { database, query: portListQueryStr });
+        logger.info("Get opened alarm port list", {
+            database: dbConfig.opnimusNewMigrated2.database,
+            query: portListQueryStr
+        });
+
         const { results: portList } = await executeQuery(pool, portListQueryStr);
+        const witelPortList = createWitelGroup(witelList, portList);
 
-        const group = [];
-        let item;
-
-        for(let i=0; i<witelList.length; i++) {
-            item = { witelId: witelList[i].id, portList: [] };
-
-            for(let j=0; j<portList.length; j++) {
-                if(portList[j].witel_id == witelList[i].id)
-                    item.portList.push(portList[j]);
-            }
-            
-            group.push(item);
-        }
-
-        return group;
-
-    } catch(err) {
-        logErrorWithFilter(err);
-        return [];
-    }
-};
-
-module.exports.updateClosedPorts = async (pool, closePorts, processDateStr) => {
-    try {
+        logger.info("Worker Port Alarm started");
+        const { openPorts, closePorts } = await runWorkerGetAlarm(witelPortList, err => {
+            logErrorWithFilter("Error when running worker worker-port-alarm.js:", err);
+        });
+        logger.info(`Worker Port Alarm run successfully, openPorts:${ openPorts.length }, closePorts:${ closePorts.length }`);
 
         if(closePorts.length > 0) {
 
-            const database = dbConfig.opnimusNewMigrated2.database;
-
-            const { closePortIds, closePortQueries } = closePorts.reduce(
-                (result, item, index) => {
-                    result.closePortIds.push(item.id);
-                    const queryStr = "UPDATE alarm_port_status SET is_closed=?, closed_at=? WHERE id=?;";
-                    result.closePortQueries.push( createQuery(queryStr, [1, processDateStr, item.id]) );
-                    return result;
-                },
-                { closePortIds: [], closePortQueries: [] }
-            );
+            const { closePortIds, closePortQueries } = closePorts.reduce((result, item, index) => {
+                result.closePortIds.push(item.id);
+                const queryStr = "UPDATE alarm_port_status SET is_closed=?, closed_at=? WHERE id=?;";
+                result.closePortQueries.push( createQuery(queryStr, [1, processDateStr, item.id]) );
+                return result;
+            }, { closePortIds: [], closePortQueries: [] });
 
             const closePortIdsStr = closePortIds.join(",");
             const closePortQueryStr = closePortQueries.join(" ");
-            logger.info("Closing (update) opened alarm ports", { database, id: closePortIdsStr, query: closePortQueryStr });
+            logger.info("Closing (update) opened alarm ports", {
+                database: dbConfig.opnimusNewMigrated2.database,
+                id: closePortIdsStr,
+                query: closePortQueryStr
+            });
+
             await executeQuery(pool, closePortQueryStr);
 
         }
 
-    } catch(err) {
-        logErrorWithFilter(err);
-    }
-}
-
-module.exports.insertOpenPorts = async (pool, openPorts, processDateStr) => {
-    let alarmPorts = [];
-    try {
-
+        let alarmPorts = [];
         if(openPorts.length > 0) {
-            
-            const database = dbConfig.opnimusNewMigrated2.database;
 
             const lastPortQueryStr = "SELECT id FROM alarm_port_status ORDER BY id DESC LIMIT 1";
-            logger.info("Get last alarm_port_status id from database", { database, query: lastPortQueryStr });
+            logger.info("Get last alarm_port_status id from database", {
+                database: dbConfig.opnimusNewMigrated2.database,
+                query: lastPortQueryStr
+            });
 
             const { results: lastPortId } = await selectRowCollumnQuery(pool, "id", lastPortQueryStr);
 
@@ -263,9 +272,11 @@ module.exports.insertOpenPorts = async (pool, openPorts, processDateStr) => {
             });
 
             const openPortQueryStr = createQuery(queryInsertPort.getQuery(), queryInsertPort.getBuiltBindData());
-            logger.info("Open (insert) new alarm ports", { database, query: openPortQueryStr });
+            logger.info("Open (insert) new alarm ports", {
+                database: dbConfig.opnimusNewMigrated2.database,
+                query: openPortQueryStr
+            });
             const insertAlarmQuery = await executeQuery(pool, openPortQueryStr);
-
             const alarmIds = queryInsertPort.buildInsertedId(
                 insertAlarmQuery.results.insertId,
                 insertAlarmQuery.results.affectedRows
@@ -284,56 +295,40 @@ module.exports.insertOpenPorts = async (pool, openPorts, processDateStr) => {
                     alarmPorts = alarmPortQuery.results;
             
             }
+
         }
 
-    } catch(err) {
-        logErrorWithFilter(err);
-    } finally {
-        return alarmPorts;
-    }
-}
-
-module.exports.insertAlarmPorts = async (pool, alarmPorts) => {
-    let alertStack = [];
-    try {
-
-        if(alarmPorts.length > 0) {
-
-            const database = dbConfig.opnimusNewMigrated2.database;
+        let alertStack = [];
+        if(applyAlertingMessage && alarmPorts.length > 0) {
 
             const { regionalIds, witelIds, locationIds } = extractAlarmPortAreaIds(alarmPorts);
             const { user: alarmPortUserQuery, pic: alarmPortPicQuery } = createAlarmPortUserQuery({ regionalIds, witelIds, locationIds });
 
-            logger.info("Get group of port alarm from database", { database, query: alarmPortUserQuery });
+            logger.info("Get user of port alarm from database", {
+                database: dbConfig.opnimusNewMigrated2.database,
+                query: alarmPortUserQuery
+            });
             const { results: alarmPortUsers } = await executeQuery(pool, alarmPortUserQuery);
 
-            logger.info("Get pic of port alarm from database", { database, query: alarmPortPicQuery });
+            logger.info("Get user of port alarm from database", {
+                database: dbConfig.opnimusNewMigrated2.database,
+                query: alarmPortPicQuery
+            });
             const { results: alarmPortPics } = await executeQuery(pool, alarmPortPicQuery);
             
             alertStack = createAlertStack(alarmPorts, alarmPortUsers, alarmPortPics);
 
         }
 
-    } catch(err) {
-        logErrorWithFilter(err);
-    } finally {
-        return alertStack;
-    }
-};
-
-module.exports.insertAlertMessage = async (pool, alertStack, processDateStr) => {
-    try {
-
+        let sendedAlertIds = [];
+        let unsendedAlerts = [];
         if(alertStack.length > 0) {
-
-            const database = dbConfig.opnimusNewMigrated2.database;
 
             const queryInsertAlert = new InsertQueryBuilder("alert_message");
             queryInsertAlert.addFields("port_id");
             queryInsertAlert.addFields("chat_id");
             queryInsertAlert.addFields("status");
             queryInsertAlert.addFields("created_at");
-
             alertStack.forEach(item => {
                 queryInsertAlert.appendRow([
                     item.alarmId,
@@ -343,62 +338,19 @@ module.exports.insertAlertMessage = async (pool, alertStack, processDateStr) => 
                 ]);
             });
 
-            const insertAlertQueryStr = createQuery(
-                queryInsertAlert.getQuery(),
-                queryInsertAlert.getBuiltBindData()
-            );
-            
-            logger.info("Write new alert to database", { database, query: insertAlertQueryStr });
-            const insertAlertQuery = await executeQuery(pool, insertAlertQueryStr);
-            const alertIds = queryInsertAlert.buildInsertedId(
-                insertAlertQuery.results.insertId,
-                insertAlertQuery.results.affectedRows
-            );
+            const insertAlertQueryStr = createQuery(queryInsertAlert.getQuery(), queryInsertAlert.getBuiltBindData());
+            logger.info("Write new alert to database", {
+                database: dbConfig.opnimusNewMigrated2.database,
+                query: insertAlertQueryStr
+            });
 
-            logger.info("Alert is successfully to write", { ids: alertIds })
+            const insertAlertQuery = await executeQuery(pool, insertAlertQueryStr);
+            const alertIds = queryInsertAlert.buildInsertedId(insertAlertQuery.results.insertId, insertAlertQuery.results.affectedRows);
+            console.log(alertIds)
             for(let i=0; i<alertStack.length; i++) {
                 if(i < alertIds.length)
                     alertStack[i].alertId = alertIds[i];
             }
-
-        }
-
-    } catch(err) {
-        logErrorWithFilter(err);
-    } finally {
-        return alertStack;
-    }
-};
-
-module.exports.main = async () => {
-    logger.info("App is starting");
-    const processDateStr = toDatetimeString(new Date());
-
-    logger.info("Creating a database connection");
-    const pool = createDbPool({
-        ...dbConfig.opnimusNewMigrated2,
-        multipleStatements: true
-    });
-
-    try {
-
-        const witelPortList = await this.getPortGroupByWitel(pool);
-
-        logger.info("Worker Port Alarm started");
-        const { openPorts, closePorts } = await runWorkerGetAlarm(witelPortList, err => {
-            logErrorWithFilter("Error when running worker worker-port-alarm.js:", err);
-        });
-        logger.info(`Worker Port Alarm run successfully, openPorts:${ openPorts.length }, closePorts:${ closePorts.length }`);
-
-        await this.updateClosedPorts(pool, closePorts, processDateStr);
-        const alarmPorts = await this.insertOpenPorts(pool, openPorts, processDateStr);
-
-        let alertStack = await this.insertAlarmPorts(pool, alarmPorts);
-        alertStack = await this.insertAlertMessage(pool, alertStack, processDateStr);
-
-        let sendedAlertIds = [];
-        let unsendedAlerts = [];
-        if(alertStack.length > 0) {
 
             logger.info("Worker Send Alert started.");
             const sendAlertResult = await runWorkerSendAlert(alertStack, err => {
@@ -410,13 +362,13 @@ module.exports.main = async () => {
 
         }
 
-        if(sendedAlertIds.length > 0) {
+        if(applyAlertingMessage && sendedAlertIds.length > 0) {
 
             await onAlertSuccess(pool, sendedAlertIds);
 
         }
 
-        if(unsendedAlerts.length > 0) {
+        if(applyAlertingMessage && unsendedAlerts.length > 0) {
 
             // const { alertId, error } = item;
             for(let j=0; j<unsendedAlerts.length; j++) {
@@ -424,13 +376,6 @@ module.exports.main = async () => {
             }
             
         }
-
-        logger.info("App is running successfully", {
-            openPorts: openPorts.length,
-            closePorts: closePorts.length,
-            sendedAlerts: sendedAlertIds.length,
-            unsendedAlerts: unsendedAlerts.length,
-        });
 
     } catch(err) {
 
@@ -455,7 +400,7 @@ const runCron = async () => {
     console.info(`\n\nRunning cron Opnimus Alerting Port V2 at ${ startTime }`);
     while(true) {
         try {
-            await this.main();
+            await this.main(true);
             const endTime = toDatetimeString(new Date());
             console.info(`\n\nCron Opnimus Alerting Port V2 closed at ${ endTime }`);
         } catch(err) {
@@ -474,4 +419,4 @@ const runCron = async () => {
  */
 // cron.schedule("*/2 * * * *", runCron);
 runCron();
-// this.main();
+// this.main(true);

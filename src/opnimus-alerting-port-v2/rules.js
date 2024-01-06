@@ -29,30 +29,30 @@ module.exports.isRuleMatch = (port, rules) => {
 
 module.exports.externalRules = {};
 
-module.exports.isRulesFileMatch = (port, rulesFile) => {
-    let rulesChecker = null;
-    try {
-        if(typeof this.externalRules[rulesFile] == "function") {
-            rulesChecker = this.externalRules[rulesFile];
-        } else {
-            const filePath = path.resolve(__dirname, `user-alerting-rules/${ rulesFile }.rules.js`);
-            rulesChecker = require(filePath);
-            this.externalRules[rulesFile] = rulesChecker;
-        }
-    } catch(err) {
-        logErrorWithFilter("Failed to load external rules, false given", err);
-        rulesChecker = port => false;
-    }
-    return rulesChecker(port);
-};
+// module.exports.isRulesFileMatch = (port, rulesFile) => {
+//     let rulesChecker = null;
+//     try {
+//         if(typeof this.externalRules[rulesFile] == "function") {
+//             rulesChecker = this.externalRules[rulesFile];
+//         } else {
+//             const filePath = path.resolve(__dirname, `user-alerting-rules/${ rulesFile }.rules.js`);
+//             rulesChecker = require(filePath);
+//             this.externalRules[rulesFile] = rulesChecker;
+//         }
+//     } catch(err) {
+//         logErrorWithFilter("Failed to load external rules, false given", err);
+//         rulesChecker = port => false;
+//     }
+//     return rulesChecker(port);
+// };
 
-module.exports.isPortUserMatch = (port, rules, applyRulesFile, rulesFile) => {
-    applyRulesFile = Boolean(applyRulesFile);
-    if(applyRulesFile)
-        return this.isRuleMatch(port, rules);
-    console.log(!applyRulesFile)
-    return this.isRulesFileMatch(port, rulesFile);
-}
+// module.exports.isPortUserMatch = (port, rules, applyRulesFile, rulesFile) => {
+//     applyRulesFile = Boolean(applyRulesFile);
+//     if(applyRulesFile)
+//         return this.isRuleMatch(port, rules);
+//     console.log(!applyRulesFile)
+//     return this.isRulesFileMatch(port, rulesFile);
+// }
 
 const test = () => {
 
@@ -80,7 +80,7 @@ const test = () => {
         is_closed: 0,
     };
     
-    const isPassingRules = this.isPortUserMatch(port, user.rules, user.apply_rules_file, user.rules_file);
+    const isPassingRules = this.isPortUserMatch(port, user.rules);
     console.log(isPassingRules);
 
 };

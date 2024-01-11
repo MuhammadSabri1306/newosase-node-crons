@@ -1,7 +1,6 @@
 const { parentPort, workerData } = require("worker_threads");
 const logger = require("./logger");
 const { useHttp } = require("./http");
-const { logErrorWithFilter } = require("./log-error");
 
 const { witel, jobQueueNumber } = workerData;
 
@@ -35,7 +34,7 @@ const fetchPortSensor = async (witelId) => {
 
     } catch(err) {
 
-        logErrorWithFilter(`Error in ${ newosaseBaseUrl }/getrtuport, witelId:${ witelId }`, err);
+        logger.error(`Error in ${ newosaseBaseUrl }/getrtuport, witelId:${ witelId }`, err);
         return [];
 
     }

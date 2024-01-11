@@ -1,7 +1,6 @@
 const path = require("path");
 const fs = require("fs");
 const logger = require("./logger");
-const { logErrorWithFilter } = require("./log-error");
 
 module.exports.extractRulesKey = rules => {
 	const regex = /{{\s*([^\s{}]+)\s*}}/g;

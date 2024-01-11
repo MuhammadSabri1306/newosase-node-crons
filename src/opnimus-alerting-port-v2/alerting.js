@@ -4,7 +4,6 @@ const { extractDate } = require("../helpers/date");
 const { toFixedNumber } = require("../helpers/number-format");
 const { createQuery } = require("../core/mysql");
 const { isRuleMatch } = require("./rules");
-const { logErrorWithFilter } = require("./log-error");
 
 module.exports.createPortAlarmQuery = (alarmIds) => {
     if(!Array.isArray(alarmIds) || alarmIds.length < 1)
@@ -282,7 +281,7 @@ module.exports.createAlertStack = (alarmPorts, alarmPortUsers, alarmPortPics) =>
             if(rules)
                 isMatch = isRuleMatch(alarmPort, rules);
         } catch(err) {
-            logErrorWithFilter(errMesage, user, alarmPort, err);
+            logger.error(errMesage, user, alarmPort, err);
         } finally {
             return isMatch;
         }

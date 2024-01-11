@@ -14,7 +14,6 @@ const {
     createQuery
 } = require("../core/mysql");
 const { createAlarmPortUserQuery, createAlertStack, createPortAlarmQuery } = require("./alerting");
-const { logErrorWithFilter } = require("./log-error");
 
 const runWorkerGetAlarm = (witelPortList, eachErrorCallback = null) => {
     return new Promise(resolve => {
@@ -118,7 +117,7 @@ const onAlertSuccess = async (pool, sendedAlertIds) => {
     try {
         await executeQuery(pool, updateSuccessAlertQueryStr);
     } catch(err) {
-        logErrorWithFilter(err);
+        logger.error(err);
     }
 };
 
@@ -152,7 +151,7 @@ const onAlertUnsended = async (pool, alertId, alertErr) => {
         }
 
     } catch(err) {
-        logErrorWithFilter(err);
+        logger.error(err);
     }
 };
 
@@ -188,7 +187,7 @@ module.exports.getPortGroupByWitel = async (pool) => {
         return group;
 
     } catch(err) {
-        logErrorWithFilter(err);
+        logger.error(err);
         return [];
     }
 };
@@ -218,7 +217,7 @@ module.exports.updateClosedPorts = async (pool, closePorts, processDateStr) => {
         }
 
     } catch(err) {
-        logErrorWithFilter(err);
+        logger.error(err);
     }
 }
 
@@ -287,7 +286,7 @@ module.exports.insertOpenPorts = async (pool, openPorts, processDateStr) => {
         }
 
     } catch(err) {
-        logErrorWithFilter(err);
+        logger.error(err);
     } finally {
         return alarmPorts;
     }
@@ -315,7 +314,7 @@ module.exports.insertAlarmPorts = async (pool, alarmPorts) => {
         }
 
     } catch(err) {
-        logErrorWithFilter(err);
+        logger.error(err);
     } finally {
         return alertStack;
     }
@@ -364,7 +363,7 @@ module.exports.insertAlertMessage = async (pool, alertStack, processDateStr) => 
         }
 
     } catch(err) {
-        logErrorWithFilter(err);
+        logger.error(err);
     } finally {
         return alertStack;
     }
@@ -386,7 +385,7 @@ module.exports.main = async () => {
 
         logger.info("Worker Port Alarm started");
         const { openPorts, closePorts } = await runWorkerGetAlarm(witelPortList, err => {
-            logErrorWithFilter("Error when running worker worker-port-alarm.js:", err);
+            logger.error("Error when running worker worker-port-alarm.js:", err);
         });
         logger.info(`Worker Port Alarm run successfully, openPorts:${ openPorts.length }, closePorts:${ closePorts.length }`);
 
@@ -402,7 +401,7 @@ module.exports.main = async () => {
 
             logger.info("Worker Send Alert started.");
             const sendAlertResult = await runWorkerSendAlert(alertStack, err => {
-                logErrorWithFilter("Error when running worker worker-send-alert.js:", err);
+                logger.error("Error when running worker worker-send-alert.js:", err);
             });
 
             sendedAlertIds = sendAlertResult.sendedAlertIds;
@@ -434,7 +433,7 @@ module.exports.main = async () => {
 
     } catch(err) {
 
-        logErrorWithFilter(err);
+        logger.error(err);
 
     } finally {
 

@@ -23,12 +23,12 @@ const fetchPortSensor = async (witelId) => {
             return response.data.result.payload;
         }
 
-        console.warn(`No data provided in ${ newosaseBaseUrl }/getrtuport, witelId:${ witelId }`, response.data);
+        app.logError(`No data provided in ${ newosaseBaseUrl }/getrtuport, witelId:${ witelId }`, response.data);
         return [];
 
     } catch(err) {
 
-        console.error(`Error in ${ newosaseBaseUrl }/getrtuport, witelId:${ witelId }`, err);
+        app.logError(`Error in ${ newosaseBaseUrl }/getrtuport, witelId:${ witelId }`, err);
         return [];
 
     }
@@ -62,11 +62,27 @@ const isPortMatch = (apiItem, dbItem) => {
 const createPortCategory = (apiData, dbData) => {
     const openAlarm = [];
     const closeAlarm = [];
-    return { openAlarm, closeAlarm };
 
     try {
         let hasMatches = false;
         let isMatch; let isNormal; let isChanged;
+
+        // if(apiData.length > 0) {
+        //     app.logger.info("apiData example, severityName", {
+        //         rtuSname: apiData[0].rtu_sname,
+        //         port: apiData[0].no_port,
+        //         unit: apiData[0].units,
+        //         severityName: apiData[0].severity.name.toString().toLowerCase()
+        //     });
+        // }
+        // if(dbData.length > 0) {
+        //     app.logger.info("dbData example, severityName", {
+        //         rtuSname: dbData[0].rtu_sname,
+        //         port: dbData[0].port_no,
+        //         unit: dbData[0].port_unit,
+        //         severityName: dbData[0].port_severity
+        //     });
+        // }
     
         for(let i=0; i<apiData.length; i++) {
             
@@ -108,7 +124,7 @@ const createPortCategory = (apiData, dbData) => {
         }
 
     } catch(err) {
-        console.error(err);
+        app.logError(err);
     } finally {
         return { openAlarm, closeAlarm };
     }
@@ -127,20 +143,20 @@ const getUsersOfWitel = (witel, groups, pics) => {
     const picUsers = [];
     for(let i=0; i<pics.length; i++) {
         if(pics[i].location_witel_id == witel.id)
-            picUsers.push(pics);
+            picUsers.push(pics[i]);
     }
 
     const groupUsers = [];
     for(let i=0; i<groups.length; i++) {
         if(groups[i].level == "nasional")
-            groupUsers.push(groups);
+            groupUsers.push(groups[i]);
         else if(groups[i].level == "regional" && groups[i].regional_id == witel.regional_id)
-            groupUsers.push(groups);
+            groupUsers.push(groups[i]);
         else if(groups[i].level == "witel" && groups[i].witel_id == witel.id)
-            groupUsers.push(groups);
+            groupUsers.push(groups[i]);
     }
 
-    return { groups: picUsers, pics: groupUsers };
+    return { groups: groupUsers, pics: picUsers };
 };
 
 const joinWitelsData = (witelList, oldAlarms, groups, pics) => {
@@ -165,7 +181,7 @@ const joinWitelsData = (witelList, oldAlarms, groups, pics) => {
         return { witelsGroup, witelsCapt };
         
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
@@ -173,13 +189,19 @@ const joinWitelsData = (witelList, oldAlarms, groups, pics) => {
 const defineAlarm = async ({ witel, groupUsers, picUsers, oldAlarms }) => {
 
     const witelOldAlarms = getAlarmsOfWitel(witel, oldAlarms);
+    app.logProcess(`Get witel's old alarm, witelId:${ witel.id }, oldAlarmsCount:${ witelOldAlarms.length }, tregOldAlarmsCount:${ oldAlarms.length }`);
+
     const witelUsers = getUsersOfWitel(witel, groupUsers, picUsers);
     const witelGroupUsers = witelUsers.groups;
     const witelPicUsers = witelUsers.pics;
+    app.logProcess(`Get all users in witel, witelId:${ witel.id }, groupCount:${ witelGroupUsers.length }, picCount:${ witelPicUsers.length }`);
 
-    const newAlarms = await fetchPortSensor(witel.id);
+    let newAlarms = await fetchPortSensor(witel.id);
+    newAlarms = filterApiPortExclude(newAlarms);
+    
     const dateTime = toDatetimeString(new Date());
-    const { openAlarm, closeAlarm } = createPortCategory(filterApiPortExclude(newAlarms), witelOldAlarms);
+    app.logProcess(`Split alarm status category, witelId:${ witel.id }, newAlarmsCount:${ newAlarms.length }, oldAlarmsCount:${ witelOldAlarms.length }`);
+    const { openAlarm, closeAlarm } = createPortCategory(newAlarms, witelOldAlarms);
 
     parentPort.postMessage({
         type: "data",
@@ -196,7 +218,7 @@ const defineAlarm = async ({ witel, groupUsers, picUsers, oldAlarms }) => {
 
 const witelList = Object.values(witels);
 const witelIdsStr = witelList.map(witel => witel.id).join(",");
-app.logProcess(`Starting port-alarm thread, queue:${ jobQueueNumber }, witelIds:(${ witelIdsStr })\n`);
+app.logProcess(`Starting port-alarm thread, queue:${ jobQueueNumber }, witelIds:(${ witelIdsStr })`);
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 (async () => {

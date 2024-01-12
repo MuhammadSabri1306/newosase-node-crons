@@ -7,25 +7,26 @@ const { InsertQueryBuilder } = require("../helpers/mysql-query-builder");
 
 const getRegionalList = async (app) => {
     try {
-        const queryStr = "SELECT * FROM regional";
-        // const queryStr = "SELECT * FROM regional WHERE id=2";
+        // const queryStr = "SELECT * FROM regional";
+        const queryStr = "SELECT * FROM regional WHERE id=2";
         app.logDatabaseQuery(queryStr, "Get regional list from database");
         const { results } = await executeQuery(app.pool, queryStr);
         return results;
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
 
 const getWitelList = async (app, regionalId) => {
     try {
-        const queryStr = createQuery("SELECT * FROM witel WHERE regional_id=?", [ regionalId ]);
+        // const queryStr = createQuery("SELECT * FROM witel WHERE regional_id=?", [ regionalId ]);
+        const queryStr = "SELECT * FROM witel WHERE id=43";
         app.logDatabaseQuery(queryStr, "Get witel list from database");
         const { results } = await executeQuery(app.pool, queryStr);
         return results;
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
@@ -40,7 +41,7 @@ const getAlarmsList = async (app, regionalId) => {
         const { results } = await executeQuery(app.pool, queryStr);
         return results;
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
@@ -85,19 +86,19 @@ const getUsersInRegional = async (app, regionalId) => {
         const { results: pics } = await executeQuery(app.pool, picQuery);
         const picUsers = pics.map(pic => {
             const loc = locs.find(item => item.location_id == pic.location_id);
-            pic.location_witel_id = loc ? loc.location_id : null;
+            pic.location_witel_id = loc ? loc.witel_id : null;
             return pic;
         });
 
         return { groupUsers, picUsers };
 
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
 
-const groupingWitel = (maxGroupItems, witelList) => {
+const groupingWitel = (app, maxGroupItems, witelList) => {
     let witel;
     try {
 
@@ -116,7 +117,7 @@ const groupingWitel = (maxGroupItems, witelList) => {
         return witelsGroup;
 
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
@@ -143,7 +144,7 @@ const updateClosedPorts = async (app, closePorts, processDateStr) => {
 
         }
     } catch(err) {
-        console.error(err);
+        app.logError(err);
     }
 }
 
@@ -212,7 +213,7 @@ const insertOpenPorts = async (app, openPorts, processDateStr) => {
 
         }
     } catch(err) {
-        console.error(err);
+        app.logError(err);
     } finally {
         return alarms;
     }
@@ -242,7 +243,7 @@ const isRuleMatch = (port, rules) => {
 	return eval(rules);
 };
 
-const getAlarmAlerts = (alarm, groupUsers, picUsers) => {
+const getAlarmAlerts = (app, alarm, groupUsers, picUsers) => {
     try {
         const alerts = [];
         let i = 0;
@@ -264,7 +265,7 @@ const getAlarmAlerts = (alarm, groupUsers, picUsers) => {
         while(i < picUsers.length) {
             if(picUsers[i].location_id == alarm.location_id) {
                 if(isRuleMatch(alarm, picUsers[i].rules)) {
-                    alerts.push({ alarm, isPic: true, picUser: picUsers });
+                    alerts.push({ alarm, isPic: true, picUser: picUsers[i] });
                 }
             }
             i++;
@@ -273,7 +274,7 @@ const getAlarmAlerts = (alarm, groupUsers, picUsers) => {
         return alerts;
         
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
@@ -283,8 +284,13 @@ const writeAlertStack = async (app, alarms, groupUsers, picUsers) => {
 
         let alertStacks = [];
         for(let i=0; i<alarms.length; i++) {
-            alertStacks = [ alertStacks, ...getAlarmAlerts(alarms[i], groupUsers, picUsers) ];
+            alertStacks = [ ...alertStacks, ...getAlarmAlerts(app, alarms[i], groupUsers, picUsers) ];
         }
+
+        app.logProcess(
+            `Build alert stack alarmsCount:${ alarms.length }, groupUsersCount:${ groupUsers.length },`+
+            ` picUsersCount:${ picUsers.length }, alertStacksCount:${ alertStacks.length }`
+        );
 
         if(alertStacks.length > 0) {
             const queryInsert = new InsertQueryBuilder("alert_message");
@@ -295,10 +301,11 @@ const writeAlertStack = async (app, alarms, groupUsers, picUsers) => {
 
             const currDate = toDatetimeString(new Date())
             alertStacks.forEach(stack => {
+                console.log(stack.picUser)
                 queryInsert.appendRow([
                     stack.alarm.id,
                     stack.isPic ? stack.picUser.user_id : stack.groupUser.chat_id,
-                    "sending",
+                    "unsended",
                     currDate
                 ]);
             });
@@ -318,26 +325,43 @@ const writeAlertStack = async (app, alarms, groupUsers, picUsers) => {
         }
 
     } catch(err) {
-        logger.error(err);
+        app.logError(err);
     }
 };
 
 const getAlertStacks = async (app, witel) => {
     try {
 
+        const date = new Date();
+        date.setHours(date.getHours() - 6);
+
         let queryStr = "SELECT alert.id AS alert_id, alert.chat_id AS alert_chat_id, alert.created_at AS alert_timestamp,"+
-            " alarm.*, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id FROM alert_message AS alert"+
+            " alarm.*, rtu.name AS rtu_name, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id,"+
+            " loc.location_name, witel.witel_name, treg.name AS regional_name"+
+            " FROM alert_message AS alert"+
             " JOIN alarm_port_status AS alarm ON alarm.id=alert.port_id"+
             " JOIN rtu_list AS rtu ON rtu.sname=alarm.rtu_sname"+
-            " WHERE alert.status='unsended' AND rtu.witel_id=?";
-        queryStr = createQuery(queryStr, [ witel.id ]);
+            " LEFT JOIN regional AS treg ON treg.id=rtu.regional_id"+
+            " LEFT JOIN witel ON witel.id=rtu.witel_id"+
+            " LEFT JOIN rtu_location AS loc ON loc.id=rtu.location_id"+
+            " WHERE alert.status='unsended' AND rtu.witel_id=? AND alert.created_at>=?";
+        queryStr = createQuery(queryStr, [ witel.id, toDatetimeString(date) ]);
 
-        app.logDatabaseQuery(queryStr, "Get unsended alarm stacks");
+        app.logDatabaseQuery(queryStr, "Get unsended alarm stacks from last 6 hours");
         const { results } = await executeQuery(app.pool, queryStr);
+
+        if(results.length < 1)
+            return results;
+
+        const alertIds = results.map(item => item.alert_id);
+        const queryUpdate = createQuery("UPDATE alert_message SET status='sending' WHERE id IN (?)", [ alertIds ]);
+        app.logDatabaseQuery(queryUpdate, `Update alarm stacks status to be 'sending', ids:${ alertIds }`);
+        await executeQuery(app.pool, queryUpdate);
+
         return results;
 
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         return [];
     }
 };
@@ -345,11 +369,11 @@ const getAlertStacks = async (app, witel) => {
 const onAlertSuccess = async (app, alertId) => {
     try {
         let queryStr = "UPDATE alert_message SET status=? WHERE id=?";
-        queryStr = createQuery(queryStr, ["success", sendedAlertIds]);
+        queryStr = createQuery(queryStr, ["success", alertId]);
         app.logDatabaseQuery(queryStr, `Update alert success status, alertId:${ alertId }`);
         await executeQuery(app.pool, queryStr);
     } catch(err) {
-        logger.error(err);
+        app.logError(err);
     }
 };
 
@@ -360,7 +384,7 @@ const onAlertUnsended = async (app, alertId, alertErr) => {
         let updateQueryStr = "UPDATE alert_message SET status=? WHERE id=?";
         updateQueryStr = createQuery(updateQueryStr, ["unsended", alertId]);
 
-        app.logDatabaseQuery(queryStr, `Update alert unsended status, alertId:${ alertId }`);
+        app.logDatabaseQuery(updateQueryStr, `Update alert unsended status, alertId:${ alertId }`);
         await executeQuery(app.pool, updateQueryStr);
 
         if(alertErr.description) {
@@ -371,18 +395,18 @@ const onAlertUnsended = async (app, alertId, alertErr) => {
                 alertId, alertErr.code, alertErr.description, processDateStr
             ]);
 
-            app.logDatabaseQuery(queryStr, "Alert error has description, push alert error to database");
+            app.logDatabaseQuery(insertQueryStr, "Alert error has description, push alert error to database");
             await executeQuery(app.pool, insertQueryStr);
 
         }
 
     } catch(err) {
-        logger.error(err);
+        app.logError(err);
     }
 };
 
 const witelJob = async (app, { witel, groupUsers, picUsers, openPorts, closePorts, dateTime }) => {
-    app.logProcess(`Witel Job is running, witelId:${ witel.id }`);
+    app.logProcess(`Witel Job is running, witelId:${ witel.id }, closePortsCount:${ closePorts.length }, openPortsCount:${ openPorts.length }`);
     try {
 
         const [ cp, alarmPorts ] = await Promise.all([
@@ -392,11 +416,10 @@ const witelJob = async (app, { witel, groupUsers, picUsers, openPorts, closePort
 
         if(alarmPorts.length < 1) {
             app.logProcess(`Port alarm is empty, witelId:${ witel.id }`);
-            app.commit(`witelTreg${ witel.regional_id }`, witel.id);
-            return;
+        } else {
+            await writeAlertStack(app, alarmPorts, groupUsers, picUsers);
         }
         
-        await writeAlertStack(app, alarmPorts, groupUsers, picUsers);
         const alertStacks = await getAlertStacks(app, witel);
         if(alertStacks.length < 1) {
             app.logProcess(`Alert is empty, witelId:${ witel.id }`);
@@ -410,7 +433,7 @@ const witelJob = async (app, { witel, groupUsers, picUsers, openPorts, closePort
             const workIndex = alertWorks.findIndex(work => work.id == alertId);
             if(workIndex >= 0)
                 alertWorks[workIndex].status = true;
-            if(alertWorks.findIndex(work => !work.status) <= 0)
+            if(alertWorks.findIndex(work => !work.status) < 0)
                 app.commit(`witelTreg${ witel.regional_id }`, witel.id);
         });
 
@@ -437,13 +460,13 @@ const witelJob = async (app, { witel, groupUsers, picUsers, openPorts, closePort
         });
     
         worker.onEachError(err => {
-            console.error(err);
+            app.logError(err);
         });
 
         worker.run();
 
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         app.commit(`witelTreg${ witel.regional_id }`, witel.id);
     }
 };
@@ -458,8 +481,8 @@ const regionalJob = async (app, regional) => {
         const oldAlarms = await getAlarmsList(app, regional.id);
     
         const maxJobCount = 3;
-        const maxGroupItems = Math.floor(witelList.length / maxJobCount);
-        const witelsGroup = groupingWitel(maxGroupItems, witelList);
+        const maxGroupItems = Math.floor( Math.max( maxJobCount / witelList.length ) / maxJobCount );
+        const witelsGroup = groupingWitel(app, maxGroupItems, witelList);
     
         if(witelsGroup.length < 1) {
             app.logProcess(`Witels Group is empty, regionalId:${ regional.id }`);
@@ -472,7 +495,7 @@ const regionalJob = async (app, regional) => {
             const workIndex = witelWorks.findIndex(work => work.id == witelId);
             if(workIndex >= 0)
                 witelWorks[workIndex].status = true;
-            if(witelWorks.findIndex(work => !work.status) <= 0)
+            if(witelWorks.findIndex(work => !work.status) < 0)
                 app.commit("regional", regional.id);
         });
     
@@ -481,7 +504,8 @@ const regionalJob = async (app, regional) => {
     
         witelsGroup.forEach((witels, i) => {
             if(Object.keys(witels).length > 0) {
-                app.logProcess(`Registering witels group:${i + 1 }, witelIds:(${ Object.keys(witels).join(",") })`)
+                const witelIdsStr = Object.keys(witels).join(",");
+                app.logProcess(`Registering witels group:${i + 1 }, witelIds:(${ witelIdsStr }), oldAlarmsCount:${ oldAlarms.length }`);
                 worker.registerWorker(workerPath, {
                     appId: app.getAppId(),
                     witels,
@@ -504,14 +528,14 @@ const regionalJob = async (app, regional) => {
         });
     
         worker.onEachError(err => {
-            console.error(err);
+            app.logError(err);
             // throw err;
         });
 
         worker.run();
 
     } catch(err) {
-        console.error(err);
+        app.logError(err);
         app.commit("regional", regional.id);
     }
 };
@@ -536,7 +560,7 @@ const runApp = async (app) => {
                     const workIndex = regionalWorks.findIndex(work => work.id == regionalId);
                     if(workIndex >= 0)
                         regionalWorks[workIndex].status = true;
-                    if(regionalWorks.findIndex(work => !work.status) <= 0)
+                    if(regionalWorks.findIndex(work => !work.status) < 0)
                         app.commit("finish");
                 });
 
@@ -544,7 +568,7 @@ const runApp = async (app) => {
 
             })
             .catch(err => {
-                console.error(err);
+                app.logError(err);
                 resolve();
             });
     });
@@ -552,7 +576,7 @@ const runApp = async (app) => {
 
 const main = async () => {
     const app = new App();
-    app.logProcess("App is starting");
+    app.logProcess("\nApp is starting");
 
     app.useDbPool({
         ...dbConfig.opnimusNewMigrated2,

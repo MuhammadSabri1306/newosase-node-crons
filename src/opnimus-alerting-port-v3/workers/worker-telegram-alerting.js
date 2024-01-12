@@ -12,11 +12,14 @@ const app = new App(appId);
 const opnimusNewBot = useOpnimusNewBot();
 
 const getStackPics = (stack, picUsers) => {
+    const pics = [];
+    let i = 0;
     while(i < picUsers.length) {
         if(picUsers[i].location_id == stack.location_id)
-            stack.pics.push(picUsers[i]);
+            pics.push(picUsers[i]);
         i++;
     }
+    return pics;
 };
 
 const getAlertIcon = (alarm) => {
@@ -92,9 +95,9 @@ const getValueText = (alarm) => {
     return `${ value } ${ alarm.port_unit }`;
 };
 
-const createAlertMessage = (alarm) => {
+const createAlertMessage = (alarm, picUsers) => {
 
-    const pics = getStackPics(alarm);
+    const pics = getStackPics(alarm, picUsers);
 
     const alertIcon = getAlertIcon(alarm);
     const title = getAlertTitle(alarm, alertIcon);
@@ -157,7 +160,7 @@ const sendAlert = async (stack, picUsers) => {
     try {
 
         app.logProcess(`Build alert message, alertId:${ stack.alert_id }`);
-        const messageText = createAlertMessage;
+        const messageText = createAlertMessage(stack, picUsers);
     
         app.logProcess(`Sending alert message, alertId:${ stack.alert_id }`);
         const result = await opnimusNewBot.sendMessage(stack.alert_chat_id, messageText, { parse_mode: "Markdown" });
@@ -204,7 +207,7 @@ const sendAlert = async (stack, picUsers) => {
             app.logProcess(`Failed to send alert message, alertId:${ stack.alert_id }`);
 
         }
-        console.error(err);
+        app.logError(err);
 
     }
 

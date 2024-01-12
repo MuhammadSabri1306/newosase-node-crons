@@ -22,10 +22,12 @@ const runCron = async () => {
 
         app = await main();
         delayTime = getDelayTime(app);
-        if(delayTime)
+        if(delayTime) {
+            console.info(`Waiting delay for ${ delayTime }ms`);
             await offTimer(delayTime);
-        else
+        } else {
             throw new Error(`Delay Time is not defined, delayTime:${ delayTime }`);
+        }
 
     }
 };

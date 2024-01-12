@@ -1,3 +1,7 @@
+const path = require("path");
+const winston = require("winston");
+const util = require("util");
+const DailyRotateFile = require("winston-daily-rotate-file");
 const { createDbPool, closePool } = require("../core/mysql");
 const { toDatetimeString } = require("../helpers/date");
 
@@ -18,7 +22,13 @@ class App {
         this.events = {};
         this.delayTimes = [];
 
-        this.useDevLogger();
+        this.isUsingWinstonLogger = false;
+
+        this.useWinstonLogger({
+            // console: true,
+            stream: true
+        });
+        // this.useDevLogger();
         // this.useEmptyLogger();
     }
 
@@ -33,6 +43,22 @@ class App {
             await closePool(this.pool);
         } catch(err) {
             this.logger.error(err);
+        }
+    }
+
+    getAppId() {
+        return `app-${ this.time }`;
+    }
+
+    getTimeByAppId(appId) {
+        try {
+            if(typeof appId != "string" || appId.indexOf("app-") !== 0)
+                throw new Error(`App.id is not valid in App.getTimeByAppId(${ appId })`);
+            const time = Number(appId.slice(4));
+            return time;
+        } catch(err) {
+            this.logger.warn(err);
+            return null;
         }
     }
 
@@ -55,45 +81,143 @@ class App {
             warn: (...args) => null,
             error: (...args) => null,
             fatal: (...args) => null
-        };;
+        };
     }
 
-    getAppId() {
-        return `app-${ this.time }`;
-    }
+    useWinstonLogger(config = {}) {
+        this.isUsingWinstonLogger = true;
+        const appId = this.getAppId();
+        const logDir = path.resolve(__dirname, "logs");
+        const formatter = this.logFormat;
 
-    getTimeByAppId(appId) {
-        try {
-            if(typeof appId != "string" || appId.indexOf("app-") !== 0)
-                throw new Error(`App.id is not valid in App.getTimeByAppId(${ appId })`);
-            const time = Number(appId.slice(4));
-            return time;
-        } catch(err) {
-            this.logger.warn(err);
-            return null;
+        const utilFormatter = function() {
+            return {
+                transform: function(info, opts) {
+                    const args = info[Symbol.for("splat")];
+                    if(args)
+                        info.message = util.format(info.message, ...args);
+                    return info;
+                }
+            };
+        };
+
+        const transports = [];
+        if(config.console)
+            transports.push(new winston.transports.Console());
+
+        if(config.stream) {
+            const dailyRF = new DailyRotateFile({
+                dirname: logDir,
+                filename: "app-%DATE%.log",
+                datePattern: "YYYY-MM-DD",
+                zippedArchive: true,
+                maxSize: "20m",
+                maxFiles: "7d",
+            });
+            transports.push(dailyRF);
         }
+
+        this.logger = winston.createLogger({
+            level: "info",
+            format: winston.format.combine(
+                winston.format.errors({ stack: true }),
+                winston.format.timestamp(),
+                utilFormatter(),
+                winston.format.printf(({ timestamp, level, message, stack }) => {
+                    const dateTime = toDatetimeString( new Date(timestamp) );
+                    return formatter({ appId, level, dateTime, message, stack });
+                })
+            ),
+            transports,
+        });
+    }
+
+    logFormat({ appId, level, dateTime, message, stack }) {
+        let text = `[${ dateTime }] ${ appId }`;
+        text += ` ${ level.toUpperCase() }: ${ message.replace("Error: ", "") }`;
+        if(stack) {
+            text += ` ${ stack.replace("Error: ", "") }`;
+        }
+        return text;
     }
 
     logProcess(description) {
-        const text = `\nrunId:${ this.time } | ${ toDatetimeString(new Date()) } | ${ description }`;
-        this.logger.info(text);
-    }
-
-    logDatabaseQuery(queries, description = null, otherParams = {}) {
-        const database = this.dbName;
-        let text = `\nrunId:${ this.time } | ${ toDatetimeString(new Date()) }`;
-        if(description)
-            text += " | " + description;
-
-        if(!Array.isArray(queries)) {
-            this.logger.info(text, { database, ...otherParams, query: queries });
+        if(this.isUsingWinstonLogger) {
+            this.logger.info(description);
             return;
         }
 
+        const appId = this.getAppId();
+        const level = "info";
+        const dateTime = toDatetimeString(new Date());
+        const text = this.logFormat({ appId, level, dateTime, message: description });
+        this.logger.info(text);
+    }
+
+    logError(...args) {
+        let err = null;
+        const errArgs = [];
+        args.forEach(arg => {
+            if(arg instanceof Error)
+                err = arg;
+            else
+                errArgs.push(arg);
+        });
+        
+        if(this.isUsingWinstonLogger) {
+            if(err) errArgs.push(err);
+            this.logger.error(...errArgs);
+            return;
+        }
+
+        const appId = this.getAppId();
+        const level = "error";
+        const dateTime = toDatetimeString(new Date());
+
+        const stack = null;
+        if(err) {
+            errArgs.push(err.message);
+            stack = err.stack;
+        }
+
+        const message = util.format(...errArgs);
+        const text = this.logFormat({ appId, level, dateTime, message, stack });
+        this.logger.error(text);
+    }
+
+    logDatabaseQuery(queries, description = "Run MySQL query", otherParams = {}) {
+        const database = this.dbName;
+
+        const appId = this.getAppId();
+        const level = "info";
+        const dateTime = toDatetimeString(new Date());
+
+        if(!Array.isArray(queries)) {
+
+            if(this.isUsingWinstonLogger) {
+                this.logger.info(description, { database, ...otherParams, query: queries });
+                return;
+            }
+
+            const text = this.logFormat({ appId, level, dateTime, message: description });
+            this.logger.info(text, { database, ...otherParams, query: queries });
+            return;
+
+        }
+
         queries.forEach((query, index) => {
+
             const params = Array.isArray(otherParams) && otherParams.length > index ? otherParams[index] : otherParams;
-            this.logger.info(text, { database, ...params, query });
-        })
+
+            if(this.isUsingWinstonLogger) {
+                this.logger.info(description, { database, ...params, query });
+                return;
+            }
+
+            const text = this.logFormat({ appId, level, dateTime, message: description });
+            this.logger.info(text, { database, ...otherParams, query });
+
+        });
     }
 
     registerDelayTimes(time) {

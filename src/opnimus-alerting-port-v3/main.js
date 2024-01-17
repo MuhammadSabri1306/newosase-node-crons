@@ -387,12 +387,12 @@ const onAlertUnsended = async (app, alertId, alertErr) => {
         app.logDatabaseQuery(updateQueryStr, `Update alert unsended status, alertId:${ alertId }`);
         await executeQuery(app.pool, updateQueryStr);
 
-        if(alertErr.description) {
+        if(alertErr.isTelegramError) {
 
-            let insertQueryStr = "INSERT INTO alert_message_error (alert_id, error_code, description, created_at)"+
-                " VALUES (?, ?, ?, ?, ?)";
+            let insertQueryStr = "INSERT INTO alert_message_error (alert_id, error_code, description, response, created_at)"+
+                " VALUES (?, ?, ?, ?, ?, ?)";
             insertQueryStr = createQuery(insertQueryStr, [
-                alertId, alertErr.code, alertErr.description, processDateStr
+                alertId, alertErr.code, alertErr.description, alertErr.response, processDateStr
             ]);
 
             app.logDatabaseQuery(insertQueryStr, "Alert error has description, push alert error to database");
@@ -450,11 +450,14 @@ const witelJob = async (app, { witel, groupUsers, picUsers, openPorts, closePort
 
             if(success) {
                 await onAlertSuccess(app, alertId);
-            } else {
-                if(retryTime)
-                    app.registerDelayTimes(retryTime);
-                await onAlertUnsended(app, alertId, error);
+                return;
             }
+            
+            if(error && error.isTelegramError)
+                await onAlertUnsended(app, alertId, error);
+
+            if(retryTime)
+                app.registerDelayTimes(retryTime);
 
             app.commit(`alertWitel${ witel.id }`, alertId);
         });

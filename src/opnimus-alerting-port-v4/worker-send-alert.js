@@ -1,15 +1,15 @@
 const { parentPort, workerData } = require("worker_threads");
-const App = require("../App");
-const { useOpnimusNewBot } = require("../../bot/opnimus-new");
-const { toDatetimeString } = require("../../helpers/date");
-const { catchRetryTime } = require("../../helpers/telegram-error");
-const TelegramText = require("../../core/telegram-text");
-const { extractDate } = require("../../helpers/date");
-const { toFixedNumber } = require("../../helpers/number-format");
+const App = require("./App");
+const { useOpnimusNewBot } = require("../bot/opnimus-new");
+const { toDatetimeString } = require("../helpers/date");
+const { catchRetryTime } = require("../helpers/telegram-error");
+const TelegramText = require("../core/telegram-text");
+const { extractDate } = require("../helpers/date");
+const { toFixedNumber } = require("../helpers/number-format");
 const { TelegramError } = require("telegraf");
 
-const { appId, stacks, picUsers, jobQueueNumber } = workerData;
-const app = new App(appId);
+const { appId, appName, alertGroups, picUsers, jobQueueNumber } = workerData;
+const app = new App(appId, appName);
 const opnimusNewBot = useOpnimusNewBot();
 
 const getStackPics = (stack, picUsers) => {
@@ -210,19 +210,43 @@ const sendAlert = async (stack, picUsers) => {
         app.logError(err);
 
     }
-
-
 };
 
-app.logProcess(`Starting telegram-alerting thread, queue:${ jobQueueNumber }, alarmId:(${ stacks.alert_id })\n`);
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+const sendAlertList = (alertList, picUsers) => {
+    return new Promise(async (resolve) => {
+        try {
+            const alertStacks = alertList.alerts;
+            app.logProcess("Start to sending alert stacks", { alertStacksCount: alertStacks.length });
+            let i = 0;
+            while(i < alertStacks.length) {
+                app.logProcess("TEST", { alertStacks: alertStacks[i] });
+                await sendAlert(alertStacks[i], picUsers);
+                i++;
+            }
+        } catch(err) {
+            app.logError(err);
+        } finally {
+            resolve();
+        }
+    });
+};
 
 (async () => {
 
-    const workList = stacks.map(stack => {
-        return sendAlert(stack, picUsers);
-    });
-    await Promise.all(workList);
-    parentPort.postMessage({ type: "finish" });
+    try {
+        app.logProcess("TEST", { alertGroupsCount: alertGroups.length });
+        app.logProcess(`Starting telegram-alerting thread, queue:${ jobQueueNumber }`);
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    
+        app.logProcess("TEST 2", { alertGroupsCount: alertGroups.length });
+        const workList = alertGroups.map(alertList => {
+            return sendAlertList(alertList, picUsers);
+        });
+    
+        await Promise.all(workList);
+        parentPort.postMessage({ type: "finish" });
+    } catch(err) {
+        app.logError(err);
+    }
 
 })();

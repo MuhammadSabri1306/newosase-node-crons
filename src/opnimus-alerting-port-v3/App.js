@@ -110,9 +110,7 @@ class App {
                 dirname: logDir,
                 filename: "app-%DATE%.log",
                 datePattern: "YYYY-MM-DD",
-                zippedArchive: true,
-                maxSize: "20m",
-                maxFiles: "7d",
+                zippedArchive: true
             });
             transports.push(dailyRF);
         }

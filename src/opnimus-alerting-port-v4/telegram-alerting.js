@@ -13,7 +13,7 @@ const getAlertStacks = async (app) => {
 
         let queryStr = "SELECT alert.id AS alert_id, alert.chat_id AS alert_chat_id, alert.created_at AS alert_timestamp,"+
             " alarm.*, rtu.name AS rtu_name, rtu.location_id, rtu.datel_id, rtu.witel_id, rtu.regional_id,"+
-            " loc.location_name, witel.witel_name, treg.name AS regional_name"+
+            " loc.location_name, witel.witel_name, treg.name AS regional_name, treg.divre_code AS regional_code"+
             " FROM alert_message AS alert"+
             " JOIN alarm_port_status AS alarm ON alarm.id=alert.port_id"+
             " JOIN rtu_list AS rtu ON rtu.sname=alarm.rtu_sname"+
@@ -114,28 +114,80 @@ const onAlertSuccess = async (app, alertId) => {
     }
 };
 
-const onAlertUnsended = async (app, alertId, alertErr = null) => {
-    const processDateStr = toDatetimeString(new Date());
+const onAlertUnsended = async (app, alertId, chatId = null, alertErr = null) => {
     try {
+
+        const processDateStr = toDatetimeString(new Date());
+        let mysqlJobs = [];
     
-        let updateQueryStr = "UPDATE alert_message SET status=? WHERE id=?";
-        updateQueryStr = createQuery(updateQueryStr, ["unsended", alertId]);
-
-        app.logDatabaseQuery(updateQueryStr, `Update alert unsended status, alertId:${ alertId }`);
-        await executeQuery(app.pool, updateQueryStr);
-
+        mysqlJobs.push(() => {
+            let queryStr = "UPDATE alert_message SET status=? WHERE id=?";
+            queryStr = createQuery(queryStr, ["unsended", alertId]);
+            app.logDatabaseQuery(queryStr, `Update alert unsended status, alertId:${ alertId }`);
+            return executeQuery(app.pool, queryStr);
+        });
+    
+        let isUserNotFound = false;
         if(alertErr && alertErr.isTelegramError) {
-
-            let insertQueryStr = "INSERT INTO alert_message_error (alert_id, error_code, description, response, created_at)"+
-                " VALUES (?, ?, ?, ?, ?)";
-            insertQueryStr = createQuery(insertQueryStr, [
-                alertId, alertErr.code, alertErr.description, alertErr.response, processDateStr
-            ]);
-
-            app.logDatabaseQuery(insertQueryStr, "Alert error has description, push alert error to database");
-            await executeQuery(app.pool, insertQueryStr);
-
+            mysqlJobs.push(() => {
+                let queryStr = "INSERT INTO alert_message_error (alert_id, error_code, description, response, created_at)"+
+                    " VALUES (?, ?, ?, ?, ?)";
+                queryStr = createQuery(queryStr, [
+                    alertId, alertErr.code, alertErr.description, alertErr.response, processDateStr
+                ]);
+                app.logDatabaseQuery(queryStr, "Push alert telegram error to database");
+                return executeQuery(app.pool, queryStr);
+            });
+    
+            const userNotFoundDescr = [
+                "Forbidden: bot was kicked from the supergroup chat",
+                "Bad Request: chat not found"
+            ];
+    
+            isUserNotFound = userNotFoundDescr.indexOf(alertErr.description) >= 0;
         }
+    
+        if(isUserNotFound && chatId) {
+    
+            app.logProcess("Telegram User not found", { chatId });
+            const userQuery = createQuery("SELECT * FROM telegram_user WHERE chat_id=?", [ chatId ]);
+            app.logDatabaseQuery(userQuery, "Get not founded user");
+            let { results: telgUser } = await executeQuery(app.pool, userQuery);
+    
+            if(telgUser.length !== 1) {
+                app.logProcess("Cannot decide which user to removed", { chatId, telgUser });
+            } else {
+                telgUser = telgUser[0];
+    
+                if(telgUser.type == "private") {
+                    mysqlJobs.push(() => {
+                        const queryStr = createQuery("DELETE FROM pic_location WHERE user_id=?", [ telgUser.id ]);
+                        app.logDatabaseQuery(queryStr, "Delete unfounded user's pic location");
+                        return executeQuery(app.pool, queryStr);
+                    });
+                    mysqlJobs.push(() => {
+                        const queryStr = createQuery("DELETE FROM telegram_personal_user WHERE user_id=?", [ telgUser.id ]);
+                        app.logDatabaseQuery(queryStr, "Delete unfounded user's personal data");
+                        return executeQuery(app.pool, queryStr);
+                    });
+                }
+    
+                mysqlJobs.push(() => {
+                    const queryStr = createQuery("DELETE FROM alert_users WHERE telegram_user_id=?", [ telgUser.id ]);
+                    app.logDatabaseQuery(queryStr, "Delete unfounded user's alert config");
+                    return executeQuery(app.pool, queryStr);
+                });
+    
+                mysqlJobs.push(() => {
+                    const queryStr = createQuery("DELETE FROM telegram_user WHERE telegram_user_id=?", [ telgUser.id ]);
+                    app.logDatabaseQuery(queryStr, "Delete unfounded user's from telegram_user");
+                    return executeQuery(app.pool, queryStr);
+                });
+            }
+    
+        }
+
+        await Promise.all( mysqlJobs.map(job => job()) );
 
     } catch(err) {
         app.logError(err);
@@ -181,12 +233,12 @@ const runApp = async (app) => {
             });
 
             worker.onData(async (workerResult) => {
-                const { alertId, success, error, retryTime } = workerResult;
+                const { alertId, chatId, success, error, retryTime } = workerResult;
                 app.logProcess("TEST onData commit", { alertId, success })
                 if(success)
                     await onAlertSuccess(app, alertId);
                 else
-                    await onAlertUnsended(app, alertId, error);
+                    await onAlertUnsended(app, alertId, chatId, error);
                 if(retryTime)
                     app.registerDelayTimes(retryTime);
                     

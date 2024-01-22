@@ -24,11 +24,15 @@ const getStackPics = (stack, picUsers) => {
 };
 
 const getAlertIcon = (alarm) => {
-    const portName = alarm.port_name.toUpperCase();
-    if(portName == "STATUS PLN")
+    const portNo = alarm.port_no;
+    if(portNo == "D-02")
         return "⚡️";
-    if(portName == "STATUS DEG")
+    if(portNo == "D-01")
         return "🔆";
+
+    const portName = alarm.port_name.toLowerCase();
+    if(portName.indexOf("temperature") >= 0)
+        return "🌡️";
 
     const portStatus = alarm.port_severity.toUpperCase();
     if(portStatus == "OFF")
@@ -114,19 +118,20 @@ const createAlertMessage = (alarm, picUsers) => {
         .addText("Pada "+datetimeStr).addLine(2)
         .addText(descr).addLine()
         .startCode()
-        .addText(`${ tregIcon } Regional  : ${ alarm.regional_name }`).addLine()
-        .addText(`🏢 Witel     : ${ alarm.witel_name }`).addLine()
-        .addText(`🏬 Lokasi    : ${ alarm.location_name }`).addLine()
-        .addText(`🎛 RTU Name  : ${ alarm.rtu_sname }`).addLine()
-        .addText(`🏪 Node Name : ${ alarm.rtu_name }`).addLine()
+        .addText(`${ tregIcon } Regional   : ${ alarm.regional_name }`).addLine()
+        .addText(`🏢 Witel      : ${ alarm.witel_name }`).addLine()
+        .addText(`🏬 Lokasi     : ${ alarm.location_name }`).addLine()
+        .addText(`🎛 RTU Name   : ${ alarm.rtu_sname }`).addLine()
+        .addText(`🏪 Node Name  : ${ alarm.rtu_name }`).addLine()
         .endCode().addLine(2)
         .addText("Detail Port Alarm:").addLine()
         .startCode()
-        .addText(`${ alertIcon } Nama Port : ${ alarm.port_name }`).addLine()
-        .addText(`🔌 Port      : ${ alarm.port_no }`).addLine()
-        .addText(`✴️ Value     : ${ valueText }`).addLine()
-        .addText(`🌋 Status    : ${ alarm.port_severity }`).addLine()
-        .addText(`📅 Waktu     : ${ datetimeStr }`).addLine()
+        .addText(`${ alertIcon } Nama Port  : ${ alarm.port_name }`).addLine()
+        .addText(`📖 Port Descr : ${ alarm.port_description }`).addLine()
+        .addText(`🔌 Port       : ${ alarm.port_no }`).addLine()
+        .addText(`✴️ Value      : ${ valueText }`).addLine()
+        .addText(`🌋 Status     : ${ alarm.port_severity }`).addLine()
+        .addText(`📅 Waktu      : ${ datetimeStr }`).addLine()
         .endCode().addLine(2);
 
     if(Array.isArray(pics) && pics.length > 0) {
@@ -171,7 +176,11 @@ const sendAlert = async (stack, picUsers) => {
     
         parentPort.postMessage({
             type: "data",
-            data: { alertId: stack.alert_id, success: true }
+            data: {
+                alertId: stack.alert_id,
+                chatId: stack.alert_chat_id,
+                success: true
+            }
         });
 
         app.logProcess(`Alert message sended successfully, alertId:${ stack.alert_id }`);
@@ -184,6 +193,7 @@ const sendAlert = async (stack, picUsers) => {
                 type: "data",
                 data: {
                     alertId: stack.alert_id,
+                    chatId: stack.alert_chat_id,
                     success: false,
                     error: {
                         isTelegramError: true,
@@ -201,6 +211,7 @@ const sendAlert = async (stack, picUsers) => {
                 type: "data",
                 data: {
                     alertId: stack.alert_id,
+                    chatId: stack.alert_chat_id,
                     success: false
                 }
             });

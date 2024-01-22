@@ -164,6 +164,7 @@ class AlarmModel extends Model {
             port_value: { nullable: true, type: Number },
             port_unit: { nullable: false, type: String },
             port_severity: { nullable: false, type: String },
+            port_description: { nullable: true, type: String },
             type: { nullable: true, type: String },
             location: { nullable: false, type: String },
             rtu_sname: { nullable: false, type: String },

@@ -44,13 +44,23 @@ const fetchPortSensor = async (witelId) => {
 const filterApiPortExclude = portList => {
     const result = [];
     const c = {};
+
+    const getDuplicatedIndex = (port) => {
+        return result.findIndex(item => {
+            if(item.rtu_sname != port.rtu_sname)
+                return false;
+            return item.no_port == port.no_port;
+        });
+    };
+
     for(let i=0; i<portList.length; i++) {
 
         c.hasName = portList[i].port_name ? true : false;
         c.hasValidCode = portList[i].no_port && portList[i].no_port !== "many" ? true : false;
-        c.notDuplicated = result.findIndex(item => item.rtu_sname == portList[i].rtu_sname) < 0;
+        c.hasValidValue = portList[i].value !== null;
+        c.notDuplicated = getDuplicatedIndex(portList[i])  < 0;
 
-        if(c.hasName && c.hasValidCode && c.notDuplicated)
+        if(c.hasName && c.hasValidCode && c.notDuplicated && c.hasValidValue)
             result.push(portList[i]);
     }
     return result;
@@ -158,6 +168,7 @@ const buildData = (apiData, dbData, rtus, groupUsers, picUsers, dateTime) => {
                     port_value: apiData[i].value,
                     port_unit: apiData[i].units,
                     port_severity: apiData[i].severity.name.toString().toLowerCase(),
+                    port_description: apiData[i].description,
                     type: apiData[i].result_type,
                     location: apiData[i].location,
                     rtu_sname: apiData[i].rtu_sname,

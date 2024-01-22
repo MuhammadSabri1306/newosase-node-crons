@@ -77,7 +77,7 @@ const getUsers = async (app) => {
 
         const groupQuery = "SELECT user.*, mode.id AS mode_id, mode.rules"+
             " FROM alert_users as alert JOIN telegram_user as user ON user.id=alert.telegram_user_id"+
-            " JOIN alert_modes AS mode ON mode.id=alert.mode_id WHERE user.is_pic=0 AND alert.cron_alert_status=1"
+            " JOIN alert_modes AS mode ON mode.id=alert.mode_id WHERE user.is_pic=0 AND alert.cron_alert_status=1"+
             " AND alert.user_alert_status=1 ORDER BY user.regist_id";
         app.logDatabaseQuery(groupQuery, "Get group list from database");
         const { results: groupUsers } = await executeQuery(app.pool, groupQuery);
@@ -101,7 +101,7 @@ const getUsers = async (app) => {
 
     } catch(err) {
         app.logError(err);
-        return { groupUsers, picUsers };
+        return { groupUsers: [], picUsers: [] };
     }
 };
 
@@ -154,6 +154,7 @@ const insertOpenPorts = async (app, newAlarms) => {
             "port_value",
             "port_unit",
             "port_severity",
+            "port_description",
             "type",
             "location",
             "rtu_sname",

@@ -43,26 +43,32 @@ const fetchPortSensor = async (witelId) => {
 
 const filterApiPortExclude = portList => {
     const result = [];
-    const c = {};
+    const isValid = (port) => {
+        if(!port.port_name || !port.no_port)
+            return false;
+        if(port.no_port === "many")
+            return false;
+        if(port.value === null)
+            return false;
+        if(port.no_port.indexOf("A-") === 0 && port.value === 0)
+            return false;
 
-    const getDuplicatedIndex = (port) => {
-        return result.findIndex(item => {
+        const duplicatedIndex = result.findIndex(item => {
             if(item.rtu_sname != port.rtu_sname)
                 return false;
             return item.no_port == port.no_port;
         });
+        if(duplicatedIndex >= 0)
+            return false;
+
+        return true;
     };
 
     for(let i=0; i<portList.length; i++) {
-
-        c.hasName = portList[i].port_name ? true : false;
-        c.hasValidCode = portList[i].no_port && portList[i].no_port !== "many" ? true : false;
-        c.hasValidValue = portList[i].value !== null;
-        c.notDuplicated = getDuplicatedIndex(portList[i])  < 0;
-
-        if(c.hasName && c.hasValidCode && c.notDuplicated && c.hasValidValue)
+        if(isValid(portList[i]))
             result.push(portList[i]);
     }
+
     return result;
 };
 
@@ -200,10 +206,7 @@ const buildData = (apiData, dbData, rtus, groupUsers, picUsers, dateTime) => {
             if(!hasMatches) {
                 closedAlarms.push({
                     id: dbData[x].id,
-                    data: {
-                        port_severity: "normal",
-                        closed_at: dateTime
-                    }
+                    data: { closed_at: dateTime }
                 });
             }
     

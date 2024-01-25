@@ -109,10 +109,10 @@ const updateClosedPorts = async (app, closedAlarms) => {
     if(closedAlarms.length < 1)
         return;
     try {
-        const { port_severity, closed_at } = closedAlarms[0].data;
+        const { closed_at } = closedAlarms[0].data;
         const ids = closedAlarms.map(item => item.id);
-        let queryStr = "UPDATE alarm_port_status SET port_severity=?, is_closed=?, closed_at=? WHERE id IN (?)";
-        queryStr = createQuery(queryStr, [ port_severity, 1, closed_at, ids ]);
+        let queryStr = "UPDATE alarm_port_status SET is_closed=?, closed_at=? WHERE id IN (?)";
+        queryStr = createQuery(queryStr, [ 1, closed_at, ids ]);
         app.logDatabaseQuery(queryStr, "Closing (update) opened alarm ports");
         await executeQuery(app.pool, queryStr);
     } catch(err) {

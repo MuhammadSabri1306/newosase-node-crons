@@ -1,0 +1,10 @@
+{
+    "newosaseWatcher": {
+        "maximumThread": 5,
+        "maximumDbPool": 50
+    },
+    "telegramAlerting": {
+        "maximumThread": 15,
+        "maximumDbPool": 50
+    }
+}

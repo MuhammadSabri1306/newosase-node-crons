@@ -88,6 +88,7 @@ module.exports.defineAlarms = (prevAlarms, currAlarms) => {
             let isChanged = isMatch && currAlarms[i].severity.name.toString().toLowerCase() != prevAlarms[j].portSeverity;
 
             if(isChanged) {
+                console.log(currAlarms[i].severity.name.toString().toLowerCase(), prevAlarms[j].portSeverity)
                 changedAlarms.push({
                     alarmId: prevAlarms[j].alarmId,
                     data: {

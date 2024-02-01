@@ -14,16 +14,17 @@ module.exports.createSequelize = (pool = null) => {
     });
 
     const sequelizeOptions = {
-        // ...dbOpnimusNewConfig,
-        host: "localhost",
-        database: dbOpnimusNewConfig.database,
-        user: "root",
-        password: "",
+        ...dbOpnimusNewConfig,
+        // host: "localhost",
+        // database: dbOpnimusNewConfig.database,
+        // user: "root",
+        // password: "",
         options: {
             logging: (msg) => {
                 const database = dbOpnimusNewConfig.database;
                 sequelizeLogger.info(`(sequelize:${ database }) ${ msg }`);
-            }
+            },
+            timezone: "+07:00"
         }
     };
     if(pool)
@@ -109,6 +110,25 @@ module.exports.createWitelThread = (witel) => {
             this.events.addListener("error", callback);
         },
     }
+};
+
+module.exports.getWitelThreadInfo = (jobs) => {
+    const all = { count: jobs.length, jobIds: [] };
+    const running = { count: 0, jobIds: [] };
+    const done = { count: 0, jobIds: [] };
+    let i = 0;
+    while(i < jobs.length) {
+        all.jobIds.push(jobs[i].id);
+        if(jobs[i].done) {
+            done.jobIds.push(jobs[i].id);
+            done.count++;
+        } else if(jobs[i].running) {
+            running.jobIds.push(jobs[i].id);
+            running.count++;
+        }
+        i++;
+    }
+    return { all, running, done };
 };
 
 module.exports.getAlarmsOfWitels = async (witelIds, app = {}) => {
@@ -228,13 +248,13 @@ module.exports.updateAlarms = async (changedAlarms, app = {}) => {
             });
         });
 
-        works.push(async () => {
-            logger.info("write changed alarms to AlarmHistory model", { jobId, alarmIds });
-            return AlarmHistory.bulkCreate(newHistoryDatas);
-        });
-
         await Promise.all( works.map(work => work()) );
-        return alarmIds;
+
+        logger.info("write changed alarms to AlarmHistory model", { jobId, alarmIds });
+        const alarmHistories = await AlarmHistory.bulkCreate(newHistoryDatas);
+        const alarmHistoryIds = alarmHistories.map(item => item.alarmHistoryId);
+
+        return { alarmIds, alarmHistoryIds };
 
     } catch(err) {
         logger.error(err);
@@ -287,13 +307,13 @@ module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
                     });
 
                     logger.info("insert opened alarm in AlarmHistory model", { jobId, alarmId: existsAlarm.alarmId });
-                    await AlarmHistory.create({
+                    const alarmHistory = await AlarmHistory.create({
                         alarmId: existsAlarm.alarmId, alarmType, portId, portNo, portName, portValue, portUnit,
                         portSeverity, portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus,
                         alertStartTime: alertStartTime || null, openedAt: new Date()
                     });
 
-                    return existsAlarm.alarmId;
+                    return { alarmId: existsAlarm.alarmId, alarmHistoryId: alarmHistory.id };
 
                 });
             } else {
@@ -309,21 +329,27 @@ module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
                     const insertedAlarm = await Alarm.create(alarmData);
 
                     logger.info("insert opened alarm in AlarmHistory model", { jobId, alarmId: insertedAlarm.alarmId });
-                    await AlarmHistory.create({
+                    const alarmHistory = await AlarmHistory.create({
                         alarmId: insertedAlarm.alarmId, alarmType, portId, portNo, portName, portValue, portUnit,
                         portSeverity, portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus,
                         alertStartTime: alertStartTime || null, openedAt: new Date()
                     });
 
-                    return insertedAlarm.alarmId;
+                    return { alarmId: insertedAlarm.alarmId, alarmHistoryId: alarmHistory.id };
 
                 });
             }
 
         });
 
-        const alarmIds = await Promise.all( works.map(work => work()) );
-        return alarmIds;
+        const results = await Promise.all( works.map(work => work()) );
+        const data = { alarmIds: [], alarmHistoryIds: [] };
+        results.forEach(({ alarmId, alarmHistoryId }) => {
+            data.alarmIds.push(alarmId);
+            data.alarmHistoryIds.push(alarmHistoryId);
+        });
+
+        return results;
 
     } catch(err) {
         logger.error(err);
@@ -331,7 +357,7 @@ module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
     }
 };
 
-module.exports.writeAlertStack = async (witel, alarmIds, app = {}) => {
+module.exports.writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
     let { logger, jobId, sequelize } = app;
     logger = Logger.getOrCreate(logger);
 
@@ -342,22 +368,35 @@ module.exports.writeAlertStack = async (witel, alarmIds, app = {}) => {
 
     try {
 
-        const works = {};
         const { AlarmHistory, TelegramUser, AlertUsers, Rtu, PicLocation, AlertStack } = useModel(sequelize);
 
-        works.getAlarms = () => {
-            logger.info("get alarms to write as alert", { jobId, alarmIds });
-            return AlarmHistory.findAll({
-                where: {
-                    alarmId: { [Op.in]: [1, 2, 3] }
-                },
-                include: [{
-                    model: Rtu,
-                    required: true
-                }]
-            });
-        };
+        logger.info("get alarms to write as alert", { jobId, alarmIds });
+        const alarmHistories = await AlarmHistory.findAll({
+            where: {
+                alarmHistoryId: { [Op.in]: alarmHistoryIds },
+            },
+            include: [{
+                model: Rtu,
+                required: true
+            }]
+        });
 
+        const regionalIds = [];
+        const witelIds = [];
+        const locIds = [];
+        alarmHistories.forEach(alarmHistory => {
+            const regionalId = alarmHistory.rtu.regionalId;
+            if(regionalIds.indexOf(regionalId) < 0)
+                regionalIds.push(regionalId);
+            const witelId = alarmHistory.rtu.witelId;
+            if(witelIds.indexOf(witelId) < 0)
+                witelIds.push(witelId);
+            const locId = alarmHistory.rtu.locationId;
+            if(locIds.indexOf(locId) < 0)
+                locIds.push(locId);
+        });
+
+        const works = {};
         works.getGroupUsers = () => {
             logger.info("get telegram groups of alarms", { jobId, alarmIds });
             return TelegramUser.findAll({
@@ -367,8 +406,8 @@ module.exports.writeAlertStack = async (witel, alarmIds, app = {}) => {
                         {
                             [Op.or]: [
                                 { level: "nasional" },
-                                { level: "regional", regionalId: 2 },
-                                { level: "witel", witelId: 43 },
+                                { level: "regional", regionalId: { [Op.in]: regionalIds } },
+                                { level: "witel", witelId: { [Op.in]: witelIds } },
                             ]
                         }
                     ]
@@ -390,18 +429,7 @@ module.exports.writeAlertStack = async (witel, alarmIds, app = {}) => {
         works.getPicUsers = () => {
             logger.info("get telegram user of alarm pics", { jobId, alarmIds });
             return TelegramUser.findAll({
-                where: {
-                    [Op.and]: [
-                        { isPic: true },
-                        {
-                            [Op.or]: [
-                                { level: "nasional" },
-                                { level: "regional", regionalId: 2 },
-                                { level: "witel", witelId: 43 },
-                            ]
-                        }
-                    ]
-                },
+                where: { isPic: true },
                 order: [ "picRegistId" ],
                 include: [{
                     model: AlertUsers,
@@ -414,19 +442,21 @@ module.exports.writeAlertStack = async (witel, alarmIds, app = {}) => {
                     }
                 }, {
                     model: PicLocation,
-                    required: true
+                    required: true,
+                    where: {
+                        locationId: { [Op.in]: locIds }
+                    }
                 }]
             });
         };
 
-        const [ alarms, groupUsers, picUsers ] = await Promise.all([
-            works.getAlarms(),
+        const [ groupUsers, picUsers ] = await Promise.all([
             works.getGroupUsers(),
             works.getPicUsers()
         ]);
         
         const alertStackDatas = [];
-        alarms.forEach(alarm => {
+        alarmHistories.forEach(alarm => {
 
             picUsers.forEach(user => {
                 user.picLocations.forEach(loc => {
@@ -513,29 +543,47 @@ module.exports.syncAlarms = (witels, app = {}) => {
         };
     
         const jobs = [];
+        const onJobDone = (job) => {
+            job.running = false;
+            job.done = true;
+            const { all, running, done } = this.getWitelThreadInfo(jobs);
+            logger.info("witel's job is closed", {
+                jobId: job.id,
+                runningJob: running,
+                doneJob: done,
+                allJob: all,
+            });
+
+            if(done.count === all.count)
+                closeSync();
+        };
+
         witels.forEach(witel => {
             const job = this.createWitelThread(witel);
 
             job.onStart(async ({ jobId, closedAlarms, changedAlarms, newAlarms }) => {
                 try {
 
-                    const [ ca, alarmIds1, alarmIds2 ] = await Promise.all([
+                    const [ ca, result1, result2 ] = await Promise.all([
                         this.closeAlarms(closedAlarms, { logger, jobId, sequelize }),
                         this.updateAlarms(changedAlarms, { logger, jobId, sequelize }),
                         this.updateOrCreateAlarms(newAlarms, { logger, jobId, sequelize })
                     ]);
 
-                    job.alarmWrite({ alarmIds: [ ...alarmIds1, ...alarmIds2 ] });
+                    const alarmIds = [ ...result1.alarmIds, ...result2.alarmIds ];
+                    const alarmHistoryIds = [ ...result1.alarmHistoryIds, ...result2.alarmHistoryIds ];
+
+                    job.alarmWrite({ alarmIds, alarmHistoryIds });
 
                 } catch(err) {
                     job.error(err);
                 }
             });
 
-            job.onAlarmWrite(async ({ jobId, alarmIds }) => {
+            job.onAlarmWrite(async ({ jobId, alarmIds, alarmHistoryIds }) => {
                 try {
 
-                    await this.writeAlertStack(witel, alarmIds, { logger, jobId, sequelize });
+                    await this.writeAlertStack(witel, alarmIds, alarmHistoryIds, { logger, jobId, sequelize });
                     job.finish();
 
                 } catch(err) {
@@ -551,12 +599,9 @@ module.exports.syncAlarms = (witels, app = {}) => {
     
             job.onFinish(() => {
                 try {
-                    logger.info("witel's job is closed", { jobId: job.id });
-                    job.running = false;
-                    job.done = true;
-                    const hasUnfinishedJobs = jobs.findIndex(item => !item.done) >= 0;
-                    if(!hasUnfinishedJobs)
-                        closeSync();
+
+                    onJobDone(job);
+
                 } catch(err) {
                     logger.info("witel's job got error", { jobId: job.id });
                     logger.error(err);

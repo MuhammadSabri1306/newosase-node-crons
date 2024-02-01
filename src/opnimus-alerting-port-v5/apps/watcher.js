@@ -15,7 +15,7 @@ class Watcher {
 
 }
 
-const setWatcherEvents = (watcher, { onBefore, onAfter, onDelay }) => {
+const setWatcherEvents = (watcher, { onBefore, onAfter, onDelay, onError }) => {
     watcher.$events = new EventEmitter();
     if(onBefore)
         watcher.$events.addListener("before", onBefore);

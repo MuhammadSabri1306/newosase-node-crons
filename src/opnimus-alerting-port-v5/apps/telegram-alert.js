@@ -195,7 +195,7 @@ module.exports.sendAlerts = async (chatId, alerts, app = {}) => {
         while(i < alerts.length) {
 
             let messageText = this.createAlertMessage(alerts[i]);
-            await bot.telegram.sendMessage("1931357638", messageText, { parse_mode: "Markdown" });
+            await bot.telegram.sendMessage(chatId, messageText, { parse_mode: "Markdown" });
             logger.info("alert message was sended", { chatId, alertStackId: alerts[i].alertStackId });
 
             callback && callback({

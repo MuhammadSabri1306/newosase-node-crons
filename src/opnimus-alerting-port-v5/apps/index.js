@@ -213,7 +213,7 @@ module.exports.updateAlarms = async (changedAlarms, app = {}) => {
     
     if(changedAlarms.length < 1) {
         logger.info("changedAlarms is empty", { jobId });
-        return [];
+        return { alarmIds: [], alarmHistoryIds: [] };
     }
 
     try {
@@ -258,17 +258,18 @@ module.exports.updateAlarms = async (changedAlarms, app = {}) => {
 
     } catch(err) {
         logger.error(err);
-        return [];
+        return { alarmIds: [], alarmHistoryIds: [] };
     }
 };
 
 module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
     let { logger, jobId, sequelize } = app;
     logger = Logger.getOrCreate(logger);
-    
+
+    const result = { alarmIds: [], alarmHistoryIds: [] };
     if(newAlarms.length < 1) {
         logger.info("newAlarms is empty", { jobId });
-        return [];
+        return result;
     }
 
     try {
@@ -342,18 +343,17 @@ module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
 
         });
 
-        const results = await Promise.all( works.map(work => work()) );
-        const data = { alarmIds: [], alarmHistoryIds: [] };
-        results.forEach(({ alarmId, alarmHistoryId }) => {
-            data.alarmIds.push(alarmId);
-            data.alarmHistoryIds.push(alarmHistoryId);
+        const workResults = await Promise.all( works.map(work => work()) );
+        workResults.forEach(({ alarmId, alarmHistoryId }) => {
+            result.alarmIds.push(alarmId);
+            result.alarmHistoryIds.push(alarmHistoryId);
         });
 
-        return results;
+        return result;
 
     } catch(err) {
         logger.error(err);
-        return [];
+        return result;
     }
 };
 
@@ -569,6 +569,8 @@ module.exports.syncAlarms = (witels, app = {}) => {
                         this.updateAlarms(changedAlarms, { logger, jobId, sequelize }),
                         this.updateOrCreateAlarms(newAlarms, { logger, jobId, sequelize })
                     ]);
+
+                    logger.info("TEST", { result1 });
 
                     const alarmIds = [ ...result1.alarmIds, ...result2.alarmIds ];
                     const alarmHistoryIds = [ ...result1.alarmHistoryIds, ...result2.alarmHistoryIds ];
@@ -813,7 +815,10 @@ module.exports.sendAlert = (app = {}) => {
         
             workerAlerting.on("message", async (workerData) => {
 
-                const { groupIndex, success, alertStackId, unsendedAlertIds, chatId, telegramErr, retryTime } = workerData;
+                const {
+                    groupIndex, success, alertStackId, unsendedAlertIds,
+                    chatId, telegramErr, retryTime
+                } = workerData;
 
                 if(groupIndex) {
                     jobs[groupIndex] = true;
@@ -840,16 +845,11 @@ module.exports.sendAlert = (app = {}) => {
                     });
                 }
 
-                if(!telegramErr) {
-                    logger.info("error catched from worker-telegram-alert", { workerData });
-                    throw new Error(`error catched from worker-telegram-alert`);
-                    closeChecker();
-                    return;
+                if(telegramErr) {
+                    if(retryTime) addDelay(watcher, retryTime);
+                    await AlertMessageError.create(telegramErr);
+                    // tambahkan pengecekan chatId tidak valid
                 }
-
-                if(retryTime) addDelay(watcher, retryTime);
-                await AlertMessageError.create(telegramErr);
-                // tambahkan pengecekan chatId tidak valid
 
             });
         

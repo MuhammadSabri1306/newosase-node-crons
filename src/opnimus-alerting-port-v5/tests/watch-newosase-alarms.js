@@ -2,12 +2,12 @@ const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
 const { useSequelize, useModel } = require("../apps/models");
 const { Op } = require("sequelize");
 const { Logger } = require("../apps/logger");
-const { createSequelize, getAlarmsOfWitels, getWitelThreadInfo, createWitelThread } = require("../apps");
+const { createSequelize, syncAlarms } = require("../apps");
 const path = require("path");
 const { watch, addDelay } = require("../apps/watcher");
 const { Worker } = require("worker_threads");
 
-const testAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
+const writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
     let { logger, jobId, sequelize } = app;
     logger = Logger.getOrCreate(logger);
 
@@ -18,8 +18,6 @@ const testAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
 
     try {
 
-        
-        const works = {};
         const { AlarmHistory, TelegramUser, AlertUsers, Rtu, PicLocation, AlertStack } = useModel(sequelize);
 
         logger.info("get alarms to write as alert", { jobId, alarmIds });
@@ -48,6 +46,7 @@ const testAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
                 locIds.push(locId);
         });
 
+        const works = {};
         works.getGroupUsers = () => {
             logger.info("get telegram groups of alarms", { jobId, alarmIds });
             return TelegramUser.findAll({
@@ -128,6 +127,8 @@ const testAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
             });
 
             groupUsers.forEach(user => {
+                if(user.level == "nasional")
+                    console.log(user.get({ plain: true }));
                 let isMatch = false;
                 if(user.level == "nasional")
                     isMatch = true;
@@ -156,9 +157,6 @@ const testAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
             return;
         }
 
-        await AlertStack.bulkCreate(alertStackDatas);
-        logger.info("writing alert stack was done", { jobId, alertStackCount: alertStackDatas.length });
-
     } catch(err) {
         logger.info("failed to write alert stack", { jobId, alarmIds });
         logger.error(err);
@@ -170,10 +168,10 @@ const main = async () => {
     const sequelize = createSequelize();
     const { Witel } = useModel(sequelize);
     const witel = await Witel.findOne({
-        where: { id: 23 }
+        where: { id: 150 }
     });
 
-    await testAlertStack(witel, [ 303 ], [ 341 ], { sequelize });
+    await writeAlertStack(witel, [174], [1713], { sequelize });
     sequelize.close();
 
 };

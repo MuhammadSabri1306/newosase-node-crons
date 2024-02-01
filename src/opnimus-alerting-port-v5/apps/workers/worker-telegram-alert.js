@@ -16,7 +16,13 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
         return sendAlerts(chatId, alerts, { logger, bot, callback });
     });
 
-    await Promise.all(jobs);
-    parentPort.postMessage({ groupIndex });
+    try {
+        await Promise.all(jobs);
+    } catch(err) {
+        logger.error(err);
+    } finally {
+        parentPort.postMessage({ groupIndex });
+    }
+
 
 })();

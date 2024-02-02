@@ -17,7 +17,7 @@ const fields = {
         allowNull: false
     },
     userId: {
-        type: DataTypes.STRING(255),
+        type: DataTypes.INTEGER,
         allowNull: false
     },
     nama: {

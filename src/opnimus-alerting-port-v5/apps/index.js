@@ -5,7 +5,8 @@ const { Op } = require("sequelize");
 const { Logger } = require("./logger");
 const { watch, addDelay } = require("./watcher");
 const EventEmitter = require("events");
-const { Worker } = require("worker_threads");
+const { Worker, workerData } = require("worker_threads");
+const { toDatetimeString } = require("../../helpers/date");
 
 module.exports.createSequelize = (pool = null) => {
     const sequelizeLogger = Logger.createWinstonLogger({
@@ -687,7 +688,6 @@ module.exports.groupAlerts = (alerts, alertGroupsTarget, app = {}) => {
         i++;
     }
 
-    // const leftCount = chatIdGroups.length - groups.length;
     while(i < chatIdGroups.length) {
         let index = groups.findIndex(group => {
             const minAlertsCount = Math.min(...groups.map(item => item.alertsCount));
@@ -713,11 +713,13 @@ module.exports.getAlertStack = async (app = {}) => {
 
     const startDate = new Date();
     startDate.setHours(startDate.getHours() - 6);
+    logger.info("reading unsended alert on stack", { createdAt: `>= ${ toDatetimeString(startDate) }` });
 
     const alerts = await AlertStack.findAll({
         where: {
             status: "unsended",
-            // createdAt: { [Op.gte]: startDate }
+            createdAt: { [Op.gte]: startDate },
+            // telegramChatId: "1931357638"
         },
         include: [{
             model: AlarmHistory,
@@ -744,21 +746,134 @@ module.exports.getAlertStack = async (app = {}) => {
             }]
         }]
     });
+    return alerts;
+};
 
-    if(alerts.length < 1) {
+module.exports.setAlertAsSending = async (alertIds, app = {}) => {
+    let { logger, sequelize } = app;
+    logger = Logger.getOrCreate(logger);
+
+    
+    if(alertIds.length < 1) {
         logger.info("alerts is empty");
         return [];
     }
-
-    const alertIds = alerts.map(alert => alert.alertStackId);
+    
+    const { AlertStack } = useModel(sequelize);
     logger.info("update alert status as sending", { alertIds });
     await AlertStack.update({ status: "sending" }, {
         where: {
             alertStackId: { [Op.in]: alertIds }
         }
     });
+};
 
-    return alerts;
+module.exports.onAlertSended = async (alertId, app = {}) => {
+    let { logger, sequelize } = app;
+    logger = Logger.getOrCreate(logger);
+    const { AlertStack } = useModel(sequelize);
+    try {
+
+        logger.info("update alert status as success", { alertId });
+        await AlertStack.update({ status: "success" }, {
+            where: { alertStackId: alertId }
+        });
+
+    } catch(err) {
+        logger.error(err);
+    }
+};
+
+module.exports.isTelegramErrorUserNotFound = (errDescription) => {
+    const descrs = [
+        "Forbidden: bot was kicked from the supergroup chat",
+        "Bad Request: chat not found"
+    ];
+    for(let i=0; i<descrs.length; i++) {
+        if(errDescription.indexOf(descrs[i]) >= 0) {
+            i = descrs.length;
+            return true;
+        }
+    }
+    return false;
+};
+
+module.exports.onAlertUnsended = async (unsendedAlertIds, telegramErr, chatId, app = {}) => {
+    let { logger, sequelize } = app;
+    logger = Logger.getOrCreate(logger);
+    const { AlertStack, AlertMessageError, TelegramUser, TelegramPersonalUser, PicLocation, AlertUsers } = useModel(sequelize);
+
+    try {
+
+        let works = [];
+        works.push(() => {
+            logger.info("changing back alert status as unsended", { alertIds: unsendedAlertIds });
+            return AlertStack.update({ status: "unsended" }, {
+                where: {
+                    alertStackId: { [Op.in]: unsendedAlertIds }
+                }
+            });
+        });
+
+        if(telegramErr) {
+            works.push(() => {
+                logger.info("insert telegram error to AlertMessageError", { telegramErr });
+                return AlertMessageError.create(telegramErr);
+            });
+        }
+        
+        await Promise.all( works.map(work => work()) );
+
+        const isUserNotFound = telegramErr && this.isTelegramErrorUserNotFound(telegramErr.description) ? true : false;
+        if(!isUserNotFound || !chatId)
+            return;
+
+        const telgUser = await TelegramUser.findOne({
+            where: { chatId }
+        });
+        logger.info("gotted telegram error user not found", { chatId, user: telgUser.get({ plain: true }) });
+        if(!telgUser)
+            return;
+
+        works = [];
+
+        if(telgUser.isPic) {
+            works.push(() => {
+                logger.info("delete user data from PicLocation", { userId: telgUser.id });
+                return PicLocation.destroy({
+                    where: { userId: telgUser.id }
+                });
+            });
+        }
+
+        if(telgUser.type == "private") {
+            works.push(() => {
+                logger.info("delete user data from TelegramPersonalUser", { userId: telgUser.id });
+                return TelegramPersonalUser.destroy({
+                    where: { userId: telgUser.id }
+                });
+            });
+        }
+
+        works.push(() => {
+            logger.info("delete user data from AlertUsers", { telegramUserId: telgUser.id });
+            return AlertUsers.destroy({
+                where: { telegramUserId: telgUser.id }
+            });
+        });
+
+        works.push(() => {
+            logger.info("delete user data from TelegramUser", { id: telgUser.id });
+            return TelegramUser.destroy({
+                where: { id: telgUser.id }
+            });
+        });
+
+        await Promise.all( works.map(work => work()) );
+
+    } catch(err) {
+        logger.error(err);
+    }
 };
 
 module.exports.sendAlert = (app = {}) => {
@@ -786,74 +901,90 @@ module.exports.sendAlert = (app = {}) => {
             Rtu, Regional, Witel, Location, PicLocation, AlertMessageError
         } = useModel(sequelize);
 
-        const startDate = new Date();
-        startDate.setHours(startDate.getHours() - 6);
-
         const alerts = await this.getAlertStack({ logger, sequelize });
         if(alerts.length < 1) {
+            logger.info("alerts is empty");
             closeChecker();
             return;
         }
+
+        const alertIds = alerts.map(alert => alert.alertStackId);
+        logger.info("setup alert stack", { alertsCount: alertIds.length, alertIds });
         
         const alertsGroupDatas = this.groupAlerts(alerts, config.telegramAlerting.maximumThread, { logger });
-        const workerAlertingPath = path.resolve(__dirname, "./workers/worker-telegram-alert.js");
+        await this.setAlertAsSending(alertIds, { logger, sequelize });
+
         const jobs = [];
+        alertIds.forEach(alertId => jobs.push({ id: alertId, done: false, success: null }));
 
-        alertsGroupDatas.forEach((alertGroup, index) => {
+        const onAlertDone = () => {
+            const all = { count: jobs.length, jobIds: [] };
+            const done = { count: 0, jobIds: [] };
+            const success = { count: 0, jobIds: [] };
+            for(let i=0; i<jobs.length; i++) {
+                all.jobIds.push(jobs[i].id);
+                if(jobs[i].done) {
+                    done.jobIds.push(jobs[i].id);
+                    done.count++;
+                }
+                if(jobs[i].success) {
+                    success.jobIds.push(jobs[i].id);
+                    success.count++;
+                }
+            }
 
-            jobs.push(false);
-            const workerAlerting = new Worker(workerAlertingPath, {
+            logger.info("alert job is done", { all, done, success });
+            if(done.count == all.count) {
+                closeChecker();
+            }
+        };
+
+        const workerPath = path.resolve(__dirname, "./workers/worker-telegram-alert.js");
+        alertsGroupDatas.forEach(alertGroup => {
+
+            const workerAlert = new Worker(workerPath, {
                 workerData: {
                     loggerConfig: {
                         threadId: logger.getThreadId(),
                         options: logger.getOptions()
                     },
-                    groupIndex: index,
                     alertGroup
                 }
             });
-        
-            workerAlerting.on("message", async (workerData) => {
 
-                const {
-                    groupIndex, success, alertStackId, unsendedAlertIds,
-                    chatId, telegramErr, retryTime
-                } = workerData;
-
-                if(groupIndex) {
-                    jobs[groupIndex] = true;
-                    if(jobs.findIndex(isJobFinish => !isJobFinish) < 0) {
-                        closeChecker();
-                        return;
-                    }
-                }
-
+            workerAlert.on("message", async (workerData) => {
+                const { success, alertStackId, unsendedAlertIds, telegramErr, retryTime, chatId } = workerData;
                 if(success) {
-                    logger.info("update alert status as success", { alertStackId });
-                    await AlertStack.update({ status: "success" }, {
-                        where: { alertStackId }
-                    });
+
+                    await this.onAlertSended(alertStackId, { logger, sequelize });
+                    const index = jobs.findIndex(item => item.id == alertStackId);
+                    jobs[index].success = true;
+                    jobs[index].done = true;
+                    onAlertDone();
                     return;
-                }
 
-                if(unsendedAlertIds && unsendedAlertIds.length > 0) {
-                    logger.info("changing back unsended alert", { unsendedAlertIds });
-                    await AlertStack.update({ status: "unsended" }, {
-                        where: {
-                            alertStackId: { [Op.in]: unsendedAlertIds }
-                        }
-                    });
                 }
-
+                
                 if(telegramErr) {
-                    if(retryTime) addDelay(watcher, retryTime);
-                    await AlertMessageError.create(telegramErr);
-                    // tambahkan pengecekan chatId tidak valid
+
+                    if(retryTime)
+                        addDelay(watcher, retryTime);
+                    await this.onAlertUnsended(unsendedAlertIds, telegramErr, chatId, { logger, sequelize });
+                    unsendedAlertIds.forEach(alertId => {
+                        const index = jobs.findIndex(item => item.id == alertId);
+                        jobs[index].success = false;
+                        jobs[index].done = true;
+                    });
+                    onAlertDone();
+                    return;
+
                 }
 
+                logger.info("error gotted in workerAlert.onMessage handler", { workerData });
+                throw new Error("error gotted in workerAlert");
             });
-        
-            workerAlerting.on("error", err => {
+
+            workerAlert.on("error", err => {
                 throw err;
             });
 

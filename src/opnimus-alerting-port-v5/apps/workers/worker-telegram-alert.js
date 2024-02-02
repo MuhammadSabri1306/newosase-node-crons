@@ -2,11 +2,11 @@ const { parentPort, workerData } = require("worker_threads");
 const { Logger } = require("../logger");
 const { useTelegramBot, sendAlerts } = require("../telegram-alert");
 
-const { groupIndex, loggerConfig, alertGroup } = workerData;
+const { loggerConfig, alertGroup } = workerData;
 const logger = new Logger(loggerConfig.threadId, loggerConfig.options);
 const bot = useTelegramBot();
 
-logger.info("starting worker-define-alarm", { groupIndex });
+logger.info("starting worker-define-alarm", { alertGroup });
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 (async () => {
@@ -20,8 +20,6 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
         await Promise.all(jobs);
     } catch(err) {
         logger.error(err);
-    } finally {
-        parentPort.postMessage({ groupIndex });
     }
 
 

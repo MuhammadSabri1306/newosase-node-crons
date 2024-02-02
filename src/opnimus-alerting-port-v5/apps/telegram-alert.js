@@ -230,6 +230,7 @@ module.exports.sendAlerts = async (chatId, alerts, app = {}) => {
                 success: false,
                 unsendedAlertIds,
                 chatId,
+                alertStackId: alerts[i].alertStackId,
                 telegramErr: {
                     alertId: alerts[i].alertStackId,
                     description: err.description,
@@ -245,11 +246,7 @@ module.exports.sendAlerts = async (chatId, alerts, app = {}) => {
                 unsendedAlertIds
             });
             logger.error(err);
-            callback && callback({
-                success: false,
-                unsendedAlertIds,
-                chatId
-            });
+            throw err;
         }
     }
 };

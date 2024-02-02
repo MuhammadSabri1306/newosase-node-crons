@@ -315,7 +315,7 @@ module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
                         alertStartTime: alertStartTime || null, openedAt: new Date()
                     });
 
-                    return { alarmId: existsAlarm.alarmId, alarmHistoryId: alarmHistory.id };
+                    return { alarmId: existsAlarm.alarmId, alarmHistoryId: alarmHistory.alarmHistoryId };
 
                 });
             } else {
@@ -337,7 +337,7 @@ module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
                         alertStartTime: alertStartTime || null, openedAt: new Date()
                     });
 
-                    return { alarmId: insertedAlarm.alarmId, alarmHistoryId: alarmHistory.id };
+                    return { alarmId: insertedAlarm.alarmId, alarmHistoryId: alarmHistory.alarmHistoryId };
 
                 });
             }
@@ -571,7 +571,7 @@ module.exports.syncAlarms = (witels, app = {}) => {
                         this.updateOrCreateAlarms(newAlarms, { logger, jobId, sequelize })
                     ]);
 
-                    logger.info("TEST", { result1 });
+                    logger.info("TEST", { result1, result2 });
 
                     const alarmIds = [ ...result1.alarmIds, ...result2.alarmIds ];
                     const alarmHistoryIds = [ ...result1.alarmHistoryIds, ...result2.alarmHistoryIds ];

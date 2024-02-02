@@ -1,12 +1,13 @@
 const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
 const path = require("path");
-const { useSequelize, useModel } = require("./models");
+const { useSequelize, useModel, toUnderscoredPlain } = require("./models");
 const { Op } = require("sequelize");
 const { Logger } = require("./logger");
 const { watch, addDelay } = require("./watcher");
 const EventEmitter = require("events");
 const { Worker, workerData } = require("worker_threads");
 const { toDatetimeString } = require("../../helpers/date");
+const { isRuleMatch } = require("./alert-mode");
 
 module.exports.createSequelize = (pool = null) => {
     const sequelizeLogger = Logger.createWinstonLogger({
@@ -369,7 +370,7 @@ module.exports.writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = 
 
     try {
 
-        const { AlarmHistory, TelegramUser, AlertUsers, Rtu, PicLocation, AlertStack } = useModel(sequelize);
+        const { AlarmHistory, TelegramUser, AlertUsers, Rtu, PicLocation, AlertStack, AlertModes } = useModel(sequelize);
 
         logger.info("get alarms to write as alert", { jobId, alarmIds });
         const alarmHistories = await AlarmHistory.findAll({
@@ -422,7 +423,11 @@ module.exports.writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = 
                             { cronAlertStatus: true },
                             { userAlertStatus: true }
                         ]
-                    }
+                    },
+                    include: [{
+                        model: AlertModes,
+                        required: true,
+                    }]
                 }]
             });
         };
@@ -440,7 +445,11 @@ module.exports.writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = 
                             { cronAlertStatus: true },
                             { userAlertStatus: true }
                         ]
-                    }
+                    },
+                    include: [{
+                        model: AlertModes,
+                        required: true,
+                    }]
                 }, {
                     model: PicLocation,
                     required: true,
@@ -460,43 +469,50 @@ module.exports.writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = 
         alarmHistories.forEach(alarm => {
 
             picUsers.forEach(user => {
+                const isUserMatch = isRuleMatch(toUnderscoredPlain(alarm), user.alertUser.alertMode.rules);
+                if(!isUserMatch) return;
                 user.picLocations.forEach(loc => {
-                    if(loc.locationId == alarm.rtu.locationId) {
-                        alertStackDatas.push({
-                            alarmHistoryId: alarm.alarmHistoryId,
-                            telegramChatId: user.userId,
-                            status: "unsended",
-                            createdAt: new Date()
-                        });
-                        logger.info("founded pic of alarms", {
-                            alarmHistoryId: alarm.alarmHistoryId,
-                            telegramUserId: user.id,
-                            locationId: loc.locationId
-                        });
-                    }
-                })
-            });
-
-            groupUsers.forEach(user => {
-                let isMatch = false;
-                if(user.level == "nasional")
-                    isMatch = true;
-                else if(user.level == "regional" && user.regionalId == alarm.rtu.regionalId)
-                    isMatch = true;
-                else if(user.level == "witel" && user.witelId == alarm.rtu.witelId)
-                    isMatch = true;
-                if(isMatch) {
+                    let isLocMatch = loc.locationId == alarm.rtu.locationId;
+                    if(!isLocMatch)
+                        return;
                     alertStackDatas.push({
                         alarmHistoryId: alarm.alarmHistoryId,
-                        telegramChatId: user.chatId,
+                        telegramChatId: user.userId,
                         status: "unsended",
                         createdAt: new Date()
                     });
-                    logger.info("founded group of alarms", {
+                    logger.info("founded pic of alarms", {
                         alarmHistoryId: alarm.alarmHistoryId,
-                        telegramUserId: user.id
+                        telegramUserId: user.id,
+                        locationId: loc.locationId
                     });
-                }
+                });
+            });
+
+            groupUsers.forEach(user => {
+                const isUserMatch = isRuleMatch(toUnderscoredPlain(alarm), user.alertUser.alertMode.rules);
+                if(!isUserMatch) return;
+
+                let isLocMatch = false;
+                if(user.level == "nasional")
+                    isLocMatch = true;
+                else if(user.level == "regional" && user.regionalId == alarm.rtu.regionalId)
+                    isLocMatch = true;
+                else if(user.level == "witel" && user.witelId == alarm.rtu.witelId)
+                    isLocMatch = true;
+
+                if(!isLocMatch)
+                    return;
+                alertStackDatas.push({
+                    alarmHistoryId: alarm.alarmHistoryId,
+                    telegramChatId: user.chatId,
+                    status: "unsended",
+                    createdAt: new Date()
+                });
+                logger.info("founded group of alarms", {
+                    alarmHistoryId: alarm.alarmHistoryId,
+                    telegramUserId: user.id
+                });
             });
             
         });

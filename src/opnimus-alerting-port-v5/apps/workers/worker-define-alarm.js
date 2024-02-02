@@ -6,44 +6,44 @@ const createJobs = (jobs, witelsAlarmDatas, app = {}) => {
     let { logger } = app;
     logger = Logger.getOrCreate(logger);
 
-    return jobs.map(async (job) => {
+    return jobs.map(job => {
+        return async () => {
+            const jobId = job.id;
+            const witelId = job.witel.id;
 
-        const jobId = job.id;
-        const witelId = job.witel.id;
+            const prevAlarms = witelId in witelsAlarmDatas ? witelsAlarmDatas[witelId] : [];
+            if(!Array.isArray(prevAlarms)) {
+                throw new Error(`expecting prevAlarms is is array, retrieved ${ typeof prevAlarms }`);
+            }
 
-        const prevAlarms = witelId in witelsAlarmDatas ? witelsAlarmDatas[witelId] : [];
-        if(!Array.isArray(prevAlarms)) {
-            throw new Error(`expecting prevAlarms is is array, retrieved ${ typeof prevAlarms }`);
-        }
+            const newosaseAlarms = await getNewosaseAlarms(witelId, app);
+            let currAlarms = newosaseAlarms;
+            if(newosaseAlarms.length > 0) {
+                currAlarms = filterNewosaseAlarms(newosaseAlarms);
+                logger.info("newosase alarms was filtered", {
+                    witelId,
+                    count: newosaseAlarms.length,
+                    resultCount: currAlarms.length
+                });
+            }
 
-        const newosaseAlarms = await getNewosaseAlarms(witelId, app);
-        let currAlarms = newosaseAlarms;
-        if(newosaseAlarms.length > 0) {
-            currAlarms = filterNewosaseAlarms(newosaseAlarms);
-            logger.info("newosase alarms was filtered", {
+            logger.info("start do defining alarms", {
                 witelId,
-                count: newosaseAlarms.length,
-                resultCount: currAlarms.length
+                prevAlarmsCount: prevAlarms.length,
+                currAlarm: newosaseAlarms.length
             });
-        }
 
-        logger.info("start do defining alarms", {
-            witelId,
-            prevAlarmsCount: prevAlarms.length,
-            currAlarm: newosaseAlarms.length
-        });
+            const { closedAlarms, changedAlarms, newAlarms } = defineAlarms(prevAlarms, currAlarms, app);
+            logger.info("alarms was defined", {
+                jobId,
+                witelId,
+                closedAlarmsCount: closedAlarms.length,
+                changedAlarmsCount: changedAlarms.length,
+                newAlarmsCount: newAlarms.length
+            });
 
-        const { closedAlarms, changedAlarms, newAlarms } = defineAlarms(prevAlarms, currAlarms, app);
-        logger.info("alarms was defined", {
-            jobId,
-            witelId,
-            closedAlarmsCount: closedAlarms.length,
-            changedAlarmsCount: changedAlarms.length,
-            newAlarmsCount: newAlarms.length
-        });
-
-        parentPort.postMessage({ jobId, closedAlarms, changedAlarms, newAlarms });
-
+            parentPort.postMessage({ jobId, closedAlarms, changedAlarms, newAlarms });
+        };
     });
 };
 
@@ -55,4 +55,4 @@ logger.info("starting worker-define-alarm", { witelIds });
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 const witelJobs = createJobs(jobsData, witelsAlarmDatas, { logger });
-Promise.all(witelJobs);
+Promise.all( witelJobs.map(run => run()) );

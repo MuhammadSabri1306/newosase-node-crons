@@ -1,4 +1,6 @@
-const { Sequelize } = require("sequelize");
+const { Sequelize, Model } = require("sequelize");
+const inflection = require("inflection");
+
 const { useAlarmModel } = require("./definitions/alarm");
 const { useAlarmHistoryModel } = require("./definitions/alarm-history");
 const { useRegionalModel } = require("./definitions/regional");
@@ -99,4 +101,38 @@ module.exports.useModel = (sequelize) => {
         PicLocation,
         AlertMessageError,
     };
+};
+
+module.exports.toUnderscoredPlain = (model, dataCaller = null) => {
+
+    if(Array.isArray(model))
+        return model.map(item => this.toUnderscoredPlain(item));
+
+    if(!model instanceof Model)
+        throw new Error(`model should be instance of sequelize Model in toUnderscoredPlain(model:${ model })`);
+
+    const data = dataCaller ? dataCaller(model) : model.get({ plain: true });
+    if(!data) return data;
+
+    const extract = (key, value) => {
+        const isObject = typeof value === "object";
+        if(value && isObject) {
+            const result = {};
+            for(let k in value) {
+                let [resultKey, resultValue] = extract(k, value[k]);
+                result[resultKey] = resultValue;
+            }
+            if(Object.values(result).length > 0)
+                return [inflection.underscore(key), result];
+        }
+        return [inflection.underscore(key), value];
+    };
+
+    const result = {};
+    for(let dataKey in data) {
+        let [key, value] = extract(dataKey, data[dataKey]);
+        result[key] = value;
+    }
+    return result;
+
 };

@@ -8,6 +8,7 @@ const EventEmitter = require("events");
 const { Worker, workerData } = require("worker_threads");
 const { toDatetimeString } = require("../../helpers/date");
 const { isRuleMatch } = require("./alert-mode");
+const { ErrorLogger } = require("./err-bot-logger");
 
 module.exports.createSequelize = (pool = null) => {
     const sequelizeLogger = Logger.createWinstonLogger({
@@ -587,7 +588,7 @@ module.exports.syncAlarms = (witels, app = {}) => {
                         this.updateOrCreateAlarms(newAlarms, { logger, jobId, sequelize })
                     ]);
 
-                    logger.info("TEST", { result1, result2 });
+                    logger.info("alarms has been written", { result1, result2 });
 
                     const alarmIds = [ ...result1.alarmIds, ...result2.alarmIds ];
                     const alarmHistoryIds = [ ...result1.alarmHistoryIds, ...result2.alarmHistoryIds ];
@@ -662,8 +663,14 @@ module.exports.syncAlarms = (witels, app = {}) => {
 };
 
 module.exports.watchNewosaseAlarmWitels = (witels) => {
+    const errLogger = new ErrorLogger("alarmwatcher", "Cron watch-newosase-alarm");
     watch(async (watcher) => {
-        await this.syncAlarms(witels, { watcher });
+        try {
+            await this.syncAlarms(witels, { watcher });
+        } catch(err) {
+            await errLogger.catch(err).logTo("-4092116808");
+            throw err;
+        }
     }, {
         onError: err => console.error(err)
     });
@@ -721,67 +728,78 @@ module.exports.groupAlerts = (alerts, alertGroupsTarget, app = {}) => {
 module.exports.getAlertStack = async (app = {}) => {
     let { logger, sequelize } = app;
     logger = Logger.getOrCreate(logger);
+    try {
+    
+        const {
+            AlertStack, AlarmHistory, TelegramUser, TelegramPersonalUser,
+            Rtu, Regional, Witel, Location, PicLocation
+        } = useModel(sequelize);
+    
+        const startDate = new Date();
+        startDate.setHours(startDate.getHours() - 6);
+        logger.info("reading unsended alert on stack", { createdAt: `>= ${ toDatetimeString(startDate) }` });
 
-    const {
-        AlertStack, AlarmHistory, TelegramUser, TelegramPersonalUser,
-        Rtu, Regional, Witel, Location, PicLocation
-    } = useModel(sequelize);
-
-    const startDate = new Date();
-    startDate.setHours(startDate.getHours() - 6);
-    logger.info("reading unsended alert on stack", { createdAt: `>= ${ toDatetimeString(startDate) }` });
-
-    const alerts = await AlertStack.findAll({
-        where: {
-            status: "unsended",
-            createdAt: { [Op.gte]: startDate },
-            // telegramChatId: "1931357638"
-        },
-        include: [{
-            model: AlarmHistory,
-            required: true,
+        const alerts = await AlertStack.findAll({
+            where: {
+                status: "unsended",
+                createdAt: { [Op.gte]: startDate },
+                // telegramChatId: "1931357638"
+            },
             include: [{
-                model: Rtu,
+                model: AlarmHistory,
                 required: true,
                 include: [{
-                    model: Location,
+                    model: Rtu,
+                    required: true,
                     include: [{
-                        model: PicLocation,
+                        model: Location,
                         include: [{
-                            model: TelegramUser,
-                            include: [ TelegramPersonalUser ]
+                            model: PicLocation,
+                            include: [{
+                                model: TelegramUser,
+                                include: [ TelegramPersonalUser ]
+                            }]
                         }]
+                    }, {
+                        model: Regional,
+                        required: true
+                    }, {
+                        model: Witel,
+                        required: true
                     }]
-                }, {
-                    model: Regional,
-                    required: true
-                }, {
-                    model: Witel,
-                    required: true
                 }]
             }]
-        }]
-    });
-    return alerts;
+        });
+        return alerts;
+
+    } catch(err) {
+        logger.error(err);
+        return [];
+    }
 };
 
 module.exports.setAlertAsSending = async (alertIds, app = {}) => {
     let { logger, sequelize } = app;
     logger = Logger.getOrCreate(logger);
 
-    
     if(alertIds.length < 1) {
         logger.info("alerts is empty");
         return [];
     }
-    
-    const { AlertStack } = useModel(sequelize);
-    logger.info("update alert status as sending", { alertIds });
-    await AlertStack.update({ status: "sending" }, {
-        where: {
-            alertStackId: { [Op.in]: alertIds }
-        }
-    });
+    try {
+
+        const { AlertStack } = useModel(sequelize);
+        logger.info("update alert status as sending", { alertIds });
+        await AlertStack.update({ status: "sending" }, {
+            where: {
+                alertStackId: { [Op.in]: alertIds }
+            }
+        });
+
+    } catch(err) {
+        logger.error(err);
+    }
+
 };
 
 module.exports.onAlertSended = async (alertId, app = {}) => {
@@ -817,9 +835,9 @@ module.exports.isTelegramErrorUserNotFound = (errDescription) => {
 module.exports.onAlertUnsended = async (unsendedAlertIds, telegramErr, chatId, app = {}) => {
     let { logger, sequelize } = app;
     logger = Logger.getOrCreate(logger);
-    const { AlertStack, AlertMessageError, TelegramUser, TelegramPersonalUser, PicLocation, AlertUsers } = useModel(sequelize);
-
     try {
+
+        const { AlertStack, AlertMessageError, TelegramUser, TelegramPersonalUser, PicLocation, AlertUsers } = useModel(sequelize);
 
         let works = [];
         works.push(() => {
@@ -834,7 +852,7 @@ module.exports.onAlertUnsended = async (unsendedAlertIds, telegramErr, chatId, a
         if(telegramErr) {
             works.push(() => {
                 logger.info("insert telegram error to AlertMessageError", { telegramErr });
-                return AlertMessageError.create(telegramErr);
+                return AlertMessageError.create({ ...telegramErr, createdAt: new Date() });
             });
         }
         
@@ -1010,8 +1028,14 @@ module.exports.sendAlert = (app = {}) => {
 };
 
 module.exports.watchAlertStack = () => {
+    const errLogger = new ErrorLogger("alertwatcher", "Cron watch-alert");
     watch(async (watcher) => {
-        await this.sendAlert({ watcher });
+        try {
+            await this.sendAlert({ watcher });
+        } catch(err) {
+            await errLogger.catch(err).logTo("-4092116808");
+            throw err;
+        }
     }, {
         onError: err => console.error(err)
     });

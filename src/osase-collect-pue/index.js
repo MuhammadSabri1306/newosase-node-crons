@@ -4,16 +4,12 @@ const JobQueue = require("../core/job-queue");
 const logger = require("./logger");
 const dbDensusConfig = require("../env/database/densus");
 const { toDatetimeString } = require("../helpers/date");
+const { toFixedNumber } = require("../helpers/number-format");
 const { InsertQueryBuilder } = require("../helpers/mysql-query-builder");
-const {
-    createDbPool,
-    closePool,
-    executeQuery,
-    createQuery
-} = require("../core/mysql");
+const { createDbPool, closePool, executeQuery, createQuery } = require("../core/mysql");
 
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 module.exports.useHttp = (baseURL, setConfig = null) => {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
     const headers = { "Accept": "application/json" };
     const httpConfig = { baseURL, headers };
     if(typeof setConfig == "function")
@@ -36,20 +32,34 @@ module.exports.getRtuList = async (pool) => {
     }
 };
 
-module.exports.handleRtuSnameConflict = rtuSname => {
+module.exports.getRegionalCodeNumber = regionalCode => {
+    if(typeof regionalCode != "string")
+        return null;
+    if(regionalCode.length != 12)
+        return null;
+    if(regionalCode.slice(0, 5) != "TLK-r")
+        return null;
+    const result = regionalCode.slice(5, 6);
+    return result ? Number(result) : result;
+};
+
+module.exports.handleRtuSnameConflict = (rtuSname, regionalNumber) => {
     let rtuPieces = rtuSname.split("-");
     if(rtuPieces.length < 2)
         return rtuSname;
+
+    const stoCode = rtuPieces[ rtuPieces.length - 1 ];
+    const divCode = `D${ regionalNumber }`;
+
     if(rtuPieces.length === 3) {
-        if(rtuPieces[0] == "RTU00" && rtuPieces[1] == "D7")
+        if(rtuPieces[0] == "RTU00" && rtuPieces[1] == divCode)
             return rtuSname;
     }
 
-    const stoCode = rtuPieces[ rtuPieces.length - 1 ];
     if(rtuPieces[0] != "RTU00")
         rtuPieces[0] = "RTU00";
-    if(rtuPieces[1] != "D7")
-        rtuPieces[1] = "D7";
+    if(rtuPieces[1] != divCode)
+        rtuPieces[1] = divCode;
     if(rtuPieces.length < 3)
         rtuPieces.push(stoCode);
     return rtuPieces.join("-");
@@ -59,43 +69,52 @@ const createDelay = ms => {
     return new Promise(resolve => setTimeout(resolve, ms));
 };
 
-module.exports.fetchPue = async (rtuid, port) => { 
+module.exports.fetchPue = async (rtu) => {
 
-    const baseUrl = "https://opnimus.telkom.co.id/api/osasev2";
-    const params = { token: "xg7DT34vE7", rtuid, port };
+    if(!rtu) return null;
+    const rtuSname = rtu.rtu_kode;
+    const portNo = rtu.port_pue_v2;
+    const regionalNumber = this.getRegionalCodeNumber(rtu.divre_kode);
 
+    const baseUrl = "https://newosase.telkom.co.id/api/v1";
+    const params = { searchRtuSname: rtuSname };
     const http = this.useHttp(baseUrl);
 
     let retryCount = 0;
-    let response;
-    let infoText = `rtu:${ rtuid } port:${ port }`;
+    let infoText = `rtu:${ rtuSname } port:${ portNo }`;
     let result = null;
-    
+
     logger.info(`Create osase api request, ${ infoText }`);
     while(retryCount < 2) {
         try {
 
-            response = await http.get("/getrtuport", { params });
+            let response = await http.get("/dashboard-service/dashboard/rtu/port-sensors", { params });
             infoText = `url:${ http.getUri(response.config) }`;
-            if(Array.isArray(response.data) && response.data.length > 0) {
 
-                result = response.data[0];
-                logger.info(`Collecting osase api response, ${ infoText }`);
-                retryCount = 2;
+            if(Array.isArray(response.data.result.payload) && response.data.result.payload.length > 0) {
 
-            } else {
+                let portData = response.data.result.payload.find(item => {
+                    return item.rtu_sname == rtuSname && item.no_port == portNo;
+                });
 
-                params.rtuid = this.handleRtuSnameConflict(rtuid);
-                throw new Error(`No data provided in osase api response, ${ infoText }`);
-                
+                if(portData) {
+                    result = portData
+                    logger.info(`Collecting osase api response, ${ infoText }`);
+                    retryCount = 2;
+                }
+
             }
 
+            if(!result) throw new Error("No data provided in osase api response");
+
         } catch(err) {
-            logger.error(`Error in ${ infoText }`);
+
+            err.message = `${ err.message } ${ infoText }`;
             logger.error(err);
 
             if(retryCount < 2) {
                 await createDelay(1000);
+                params.searchRtuSname = this.handleRtuSnameConflict(rtuSname, regionalNumber);
                 logger.info(`Re-create osase api request, ${ infoText }`);
             }
             retryCount++;
@@ -120,9 +139,11 @@ module.exports.insertPue = async (pool, rtuId, pue) => {
         queryInsertPue.addFields("tipe_port");
         queryInsertPue.addFields("satuan");
         queryInsertPue.addFields("timestamp");
+
+        const pueValue = typeof pue.value == "number" ? toFixedNumber(pue.value, 2) : pue.value;
         queryInsertPue.appendRow([
-            rtuId, pue.RTU_ID, pue.VALUE, pue.PORT, pue.NAMA_PORT,
-            pue.TIPE_PORT, pue.SATUAN, toDatetimeString(new Date())
+            rtuId, pue.rtu_sname, pueValue, pue.no_port, pue.port_name,
+            pue.identifier, pue.units, toDatetimeString(new Date())
         ]);
 
         const insertPueQueryStr = createQuery(queryInsertPue.getQuery(), queryInsertPue.getBuiltBindData());
@@ -139,7 +160,7 @@ const getRtuPue = async (pool, rtu) => {
 
         if(!rtu.rtu_kode || !rtu.port_pue_v2)
             throw new Error("Cannot found OsaseV2 api params");
-        const pue = await this.fetchPue(rtu.rtu_kode, rtu.port_pue_v2);
+        const pue = await this.fetchPue(rtu);
         await this.insertPue(pool, rtu.rtu_kode, pue);
 
     } catch(err) {
@@ -154,7 +175,10 @@ module.exports.main = async () => {
     try {
 
         const rtus = await this.getRtuList(pool);
-        await Promise.all( rtus.map(rtu => getRtuPue(pool, rtu)) );
+        // await Promise.all( rtus.map(rtu => getRtuPue(pool, rtu)) );
+        for(let i=0; i<rtus.length; i++) {
+            await getRtuPue(pool, rtus[i]);
+        }
 
     } catch(err) {
         logger.error(err);

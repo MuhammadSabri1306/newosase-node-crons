@@ -136,11 +136,12 @@ const writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
 
             groupUsers.forEach(user => {
                 const isUserMatch = isRuleMatch(toUnderscoredPlain(alarm), user.alertUser.alertMode.rules);
-                console.log({
-                    isUserMatch,
-                    userRules: user.alertUser.alertMode.rules,
-                    alarm: toUnderscoredPlain(alarm)
-                });
+                // console.log({
+                //     isUserMatch,
+                //     userRules: user.alertUser.alertMode.rules,
+                //     userUsername: user.username,
+                //     alarm: toUnderscoredPlain(alarm)
+                // });
                 if(!isUserMatch) return;
 
                 let isLocMatch = false;
@@ -185,15 +186,18 @@ const main = async () => {
 
     const sequelize = useSequelize(dbOpnimusNewConfig);
     const witelId = 254;
-    const alarmIds = [1613, 876, 880];
-    const alarmHistoryIds = [17610, 17608, 17609];
+    const alarmIds = [2580];
+    const alarmHistoryIds = [585872];
 
     const { Witel } = useModel(sequelize);
     const witel = await Witel.findOne({
         where: { id: witelId }
     });
 
-    await writeAlertStack(witel, alarmIds, alarmHistoryIds, { sequelize });
+    await writeAlertStack(witel, alarmIds, alarmHistoryIds, {
+        sequelize,
+        logger: Logger.create({ useConsole: true })
+    });
 
     await sequelize.close();
 

@@ -540,8 +540,9 @@ module.exports.syncAlarms = (witels, app = {}) => {
 
     return new Promise(async (resolve) => {
 
-        const maxDbPool = Math.round(config.newosaseWatcher.maximumDbPool / config.newosaseWatcher.maximumThread);
-        const sequelize = this.createSequelize({ max: maxDbPool });
+        // const maxDbPool = Math.round(config.newosaseWatcher.maximumDbPool / config.newosaseWatcher.maximumThread);
+        // const sequelize = this.createSequelize({ max: maxDbPool });
+        const sequelize = this.createSequelize({ max: config.newosaseWatcher.maximumDbPool });
 
         const logger = Logger.create({
             useStream: true,
@@ -554,7 +555,7 @@ module.exports.syncAlarms = (witels, app = {}) => {
 
         const closeSync = async () => {
 
-            await sequelize.close();
+            // await sequelize.close();
             logger.info("close alarms synchroniztion of witels", { witelIds });
             resolve();
 
@@ -663,7 +664,7 @@ module.exports.syncAlarms = (witels, app = {}) => {
 };
 
 module.exports.watchNewosaseAlarmWitels = (witels) => {
-    const errLogger = new ErrorLogger("alarmwatcher", "Cron watch-newosase-alarm");
+    const errLogger = new ErrorLogger("alarmwatcher", "NODE CRON watch-newosase-alarm");
     watch(async (watcher) => {
         try {
             await this.syncAlarms(witels, { watcher });
@@ -821,6 +822,7 @@ module.exports.onAlertSended = async (alertId, app = {}) => {
 module.exports.isTelegramErrorUserNotFound = (errDescription) => {
     const descrs = [
         "Forbidden: bot was kicked from the supergroup chat",
+        "Forbidden: bot was kicked from the group chat",
         "Bad Request: chat not found"
     ];
     for(let i=0; i<descrs.length; i++) {
@@ -1028,7 +1030,7 @@ module.exports.sendAlert = (app = {}) => {
 };
 
 module.exports.watchAlertStack = () => {
-    const errLogger = new ErrorLogger("alertwatcher", "Cron watch-alert");
+    const errLogger = new ErrorLogger("alertwatcher", "NODE CRON watch-alert");
     watch(async (watcher) => {
         try {
             await this.sendAlert({ watcher });

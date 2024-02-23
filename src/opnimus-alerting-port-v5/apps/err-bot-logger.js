@@ -11,8 +11,12 @@ class ErrorLogger {
         this.bot = new Telegraf(botConfig.token);
     }
 
+    getMessageTitle() {
+        return `*${ this.name }* from [@${ botConfig.username }](https://t.me/${ botConfig.username })\n\n`;
+    }
+
     catch(err) {
-        const title = `*${ this.name }* from [@${ botConfig.username }](https://t.me/${ botConfig.username })`;
+        const title = this.getMessageTitle();
         const descr = err.message;
         const stack = err.stack
             .toString()
@@ -24,7 +28,7 @@ class ErrorLogger {
         const dateTimeStr = toDatetimeString(new Date());
         const footer = `#mybotlogger #nodeerror #${ this.key } ${ dateTimeStr }`;
 
-        this.msgText = `${ title }\n\n${ descr }\`\`\`\n${ stack }\`\`\`\n\n${ footer }`;
+        this.msgText = `${ title }${ descr }\`\`\`\n${ stack }\`\`\`\n\n${ footer }`;
         return this;
     }
 

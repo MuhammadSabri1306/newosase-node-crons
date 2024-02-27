@@ -74,21 +74,36 @@ module.exports.getAlertDescr = (alarm) => {
         .get();
 };
 
+module.exports.getRegionalNumber = regional => {
+    const fields = [];
+    if(regional) {
+        if(regional.divreCode) fields.push(regional.divreCode)
+        if(regional.sname) fields.push(regional.sname)
+        if(regional.name) fields.push(regional.name)
+    }
+
+    for(let i=0; i<fields.length; i++) {
+        if(typeof fields[i] == "string") {
+            let match = fields[i].match(/[1-9]/);
+            if(match) {
+                i = fields.length;
+                return Number(match[0]);
+            }
+        }
+    }
+
+    return null;
+};
+
 module.exports.getRegionalIcon = (regional) => {
-    if(regional.divreCode == "TLK-r1000000")
-        return "1️⃣";
-    if(regional.divreCode == "TLK-r2000000")
-        return "2️⃣";
-    if(regional.divreCode == "TLK-r3000000")
-        return "3️⃣";
-    if(regional.divreCode == "TLK-r4000000")
-        return "4️⃣";
-    if(regional.divreCode == "TLK-r5000000")
-        return "5️⃣";
-    if(regional.divreCode == "TLK-r6000000")
-        return "6️⃣";
-    if(regional.divreCode == "TLK-r7000000")
-        return "7️⃣";
+    const regionalNumber = this.getRegionalNumber(regional);
+    if(regionalNumber === 1) return "1️⃣";
+    if(regionalNumber === 2) return "2️⃣";
+    if(regionalNumber === 3) return "3️⃣";
+    if(regionalNumber === 4) return "4️⃣";
+    if(regionalNumber === 5) return "5️⃣";
+    if(regionalNumber === 6) return "6️⃣";
+    if(regionalNumber === 7) return "7️⃣";
     return " ";
 };
 

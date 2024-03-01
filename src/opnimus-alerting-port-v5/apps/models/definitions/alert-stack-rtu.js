@@ -1,33 +1,33 @@
 const { DataTypes, Model } = require("sequelize");
 const inflection = require("inflection");
 
-class AlertStack extends Model {}
+class AlertStackRtu extends Model {}
 
 const modelOptions = {
-    modelName: "alertStack",
-    tableName: "alert_stack",
+    modelName: "alertStackRtu",
+    tableName: "alert_stack_rtu",
     underscored: true,
     indexes:[
-        { unique: false, fields: [ inflection.underscore("alarmHistoryId") ] }
+        { unique: false, fields: [ inflection.underscore("alarmHistoryRtuId") ] }
     ],
     timestamps: false,
 };
 
 const fields = {
-    alertStackId: {
+    alertStackRtuId: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
         allowNull: false
     },
-    alarmHistoryId: {
+    alarmHistoryRtuId: {
         type: DataTypes.INTEGER,
         allowNull: false
     },
     alertType: {
         type: DataTypes.STRING(20),
         allowNull: false,
-        defaultValue: "open-port"
+        defaultValue: "rtu-down"
     },
     telegramChatId: {
         type: DataTypes.STRING(255),
@@ -48,11 +48,11 @@ const fields = {
     },
 };
 
-module.exports.AlertStack = AlertStack;
-module.exports.alertStackFields = fields;
-module.exports.alertStackModelOptions = modelOptions;
+module.exports.AlertStackRtu = AlertStackRtu;
+module.exports.alertStackRtuFields = fields;
+module.exports.alertStackRtuModelOptions = modelOptions;
 
-module.exports.useAlertStackModel = (sequelize) => {
-    AlertStack.init(fields, { ...modelOptions, sequelize });
-    return AlertStack;
+module.exports.useAlertStackRtuModel = (sequelize) => {
+    AlertStackRtu.init(fields, { ...modelOptions, sequelize });
+    return AlertStackRtu;
 };

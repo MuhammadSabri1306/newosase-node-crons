@@ -42,20 +42,28 @@ module.exports.watch = async (runWatcher, events = null) => {
         setWatcherEvents(watcher, events);
 
     let run = true;
+    const continueLoop = val => run = val;
+
     while(run) {
         try {
             watcher.$events && watcher.$events.emit("before");
             await runWatcher(watcher);
             watcher.$events && watcher.$events.emit("after");
             
+        } catch(err) {
+
+            run = false;
+            if(watcher.$events)
+                await watcher.$events.emit("error", err, continueLoop);
+
+        } finally {
+
             const delayTime = getWatcherBiggestDelayTime(watcher);
             if(delayTime > 0) {
                 watcher.$events && watcher.$events.emit("delay", delayTime);
                 await new Promise(resolve => setTimeout(resolve, delayTime));
             }
-        } catch(err) {
-            watcher.$events && watcher.$events.emit("error", err);
-            run = false;
+
         }
     }
 };

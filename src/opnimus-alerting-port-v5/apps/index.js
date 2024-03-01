@@ -1,19 +1,21 @@
-const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
-const path = require("path");
-const { useSequelize, useModel, toUnderscoredPlain } = require("./models");
-const { Op } = require("sequelize");
-const { Logger } = require("./logger");
-const { watch, addDelay } = require("./watcher");
 const EventEmitter = require("events");
 const { Worker, workerData } = require("worker_threads");
-const { toDatetimeString } = require("../../helpers/date");
-const { isRuleMatch } = require("./alert-mode");
+const path = require("path");
+const { Op } = require("sequelize");
+const { useSequelize, useModel, toUnderscoredPlain } = require("./models");
+const { Logger } = require("./logger");
+const { watch, addDelay } = require("./watcher");
+const defineAlarm = require("./define-alarm");
+const telegramAlert = require("./telegram-alert");
 const { ErrorLogger } = require("./err-bot-logger");
+const { toDatetimeString } = require("../../helpers/date");
+const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
 
 module.exports.createSequelize = (pool = null) => {
     const sequelizeLogger = Logger.createWinstonLogger({
         fileName: "sequelize",
         useStream: true,
+        dirName: path.resolve(__dirname, "../logs")
     });
 
     const sequelizeOptions = {
@@ -81,36 +83,15 @@ module.exports.createWitelThread = (witel) => {
             const jobId = this.id;
             this.events.emit("start", { ...data, jobId });
         },
-        alarmWrite(data = {}) {
-            const jobId = this.id;
-            this.events.emit("alarm-write", { ...data, jobId });
-        },
-        alertWrite(data = {}) {
-            const jobId = this.id;
-            this.events.emit("alert-write", { ...data, jobId });
-        },
         finish(data = {}) {
             const jobId = this.id;
             this.events.emit("finish", { ...data, jobId });
         },
-        error(err) {
-            const jobId = this.id;
-            this.events.emit("error", { err, jobId });
-        },
         onStart(callback) {
             this.events.addListener("start", callback);
         },
-        onAlarmWrite(callback) {
-            this.events.addListener("alarm-write", callback);
-        },
-        onAlertWrite(callback) {
-            this.events.addListener("alert-write", callback);
-        },
         onFinish(callback) {
             this.events.addListener("finish", callback);
-        },
-        onError(callback) {
-            this.events.addListener("error", callback);
         },
     }
 };
@@ -134,403 +115,16 @@ module.exports.getWitelThreadInfo = (jobs) => {
     return { all, running, done };
 };
 
-module.exports.getAlarmsOfWitels = async (witelIds, app = {}) => {
-    let { sequelize, logger } = app;
-    logger = Logger.getOrCreate(logger);
-    logger.info("get alarms of witels", { witelIds });
-
-    const witelAlarms = {};
-    try {
-
-        const { Alarm, Rtu } = useModel(sequelize);
-        const alarms = await Alarm.findAll({
-            where: {
-                isOpen: true,
-            },
-            include: [{
-                model: Rtu,
-                required: true,
-                where: {
-                    witelId: { [Op.in]: witelIds }
-                }
-            }]
-        });
-
-        alarms.forEach(alarm => {
-            const witelId = alarm.rtu.witelId;
-            if(!Array.isArray(witelAlarms[witelId]))
-                witelAlarms[witelId] = [];
-            witelAlarms[witelId].push(alarm.get({ plain: true }));
-        });
-
-    } catch(err) {
-        logger.error(err);
-    } finally {
-        return witelAlarms;
-    }
-};
-
-module.exports.closeAlarms = async (closedAlarms, app = {}) => {
-    let { logger, jobId, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-    
-    if(closedAlarms.length < 1) {
-        logger.info("closedAlarms is empty", { jobId });
-        return;
-    }
-
-    try {
-
-        const { Alarm, AlarmHistory } = useModel(sequelize);
-        const alarmIds = closedAlarms.map(item => item.alarmId);
-        const updateWorks = [];
-
-        updateWorks.push(async () => {
-            logger.info("update closed alarms in Alarm model", { jobId, alarmIds });
-            return Alarm.update({ isOpen: false }, {
-                where: {
-                    alarmId: { [Op.in]: alarmIds }
-                }
-            });
-        });
-
-        updateWorks.push(async () => {
-            logger.info("update closed alarms in AlarmHistory model", { jobId, alarmIds });
-            return AlarmHistory.update({ closedAt: new Date() }, {
-                where: {
-                    alarmId: { [Op.in]: alarmIds }
-                }
-            });
-        });
-
-        await Promise.all( updateWorks.map(work => work()) );
-
-    } catch(err) {
-        logger.error(err);
-    }
-};
-
-module.exports.updateAlarms = async (changedAlarms, app = {}) => {
-    let { logger, jobId, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-    
-    if(changedAlarms.length < 1) {
-        logger.info("changedAlarms is empty", { jobId });
-        return { alarmIds: [], alarmHistoryIds: [] };
-    }
-
-    try {
-
-        const { Alarm, AlarmHistory } = useModel(sequelize);
-        const works = [];
-
-        const alarmIds = [];
-        const newHistoryDatas = [];
-        changedAlarms.forEach(({ alarmId, data }) => {
-            alarmIds.push(alarmId);
-            const {
-                alarmType, portId, portNo, portName, portValue, portUnit, portSeverity, portDescription,
-                portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus, alertStartTime
-            } = data;
-
-            works.push(async () => {
-                const alarmData = {
-                    alarmType, portId, portNo, portName, portValue, portUnit, portSeverity,
-                    portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus
-                };
-                logger.info("update changed alarm in Alarm model", { jobId, alarmId });
-                return Alarm.update(alarmData, {
-                    where: { alarmId }
-                });
-            });
-
-            newHistoryDatas.push({
-                alarmId, alarmType, portId, portNo, portName, portValue, portUnit, portSeverity,
-                portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus,
-                alertStartTime: alertStartTime || null, openedAt: new Date()
-            });
-        });
-
-        await Promise.all( works.map(work => work()) );
-
-        logger.info("write changed alarms to AlarmHistory model", { jobId, alarmIds });
-        const alarmHistories = await AlarmHistory.bulkCreate(newHistoryDatas);
-        const alarmHistoryIds = alarmHistories.map(item => item.alarmHistoryId);
-
-        return { alarmIds, alarmHistoryIds };
-
-    } catch(err) {
-        logger.error(err);
-        return { alarmIds: [], alarmHistoryIds: [] };
-    }
-};
-
-module.exports.updateOrCreateAlarms = async (newAlarms, app = {}) => {
-    let { logger, jobId, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-
-    const result = { alarmIds: [], alarmHistoryIds: [] };
-    if(newAlarms.length < 1) {
-        logger.info("newAlarms is empty", { jobId });
-        return result;
-    }
-
-    try {
-
-        const { Alarm, AlarmHistory } = useModel(sequelize);
-        const portIds = newAlarms.map(alarm => alarm.portId);
-        const existsAlarms = await Alarm.findAll({
-            where: {
-                portId: { [Op.in]: portIds }
-            }
-        });
-
-        const works = [];
-        newAlarms.forEach(alarm => {
-
-            const existsAlarm = existsAlarms.find(item => item.portId == alarm.portId);
-            const isAlarmExists = existsAlarm ? true : false;
-
-            const {
-                alarmType, portId, portNo, portName, portValue, portUnit, portSeverity, portDescription,
-                portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus, alertStartTime
-            } = alarm;
-
-            if(isAlarmExists) {
-                works.push(async () => {
-
-                    const alarmData = {
-                        alarmType, portId, portNo, portName, portValue, portUnit, portSeverity,
-                        portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus,
-                        isOpen: true
-                    };
-
-                    logger.info("update opened alarm in Alarm model", { jobId, alarmId: existsAlarm.alarmId });
-                    await Alarm.update(alarmData, {
-                        where: { alarmId: existsAlarm.alarmId }
-                    });
-
-                    logger.info("insert opened alarm in AlarmHistory model", { jobId, alarmId: existsAlarm.alarmId });
-                    const alarmHistory = await AlarmHistory.create({
-                        alarmId: existsAlarm.alarmId, alarmType, portId, portNo, portName, portValue, portUnit,
-                        portSeverity, portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus,
-                        alertStartTime: alertStartTime || null, openedAt: new Date()
-                    });
-
-                    return { alarmId: existsAlarm.alarmId, alarmHistoryId: alarmHistory.alarmHistoryId };
-
-                });
-            } else {
-                works.push(async () => {
-
-                    const alarmData = {
-                        alarmType, portId, portNo, portName, portValue, portUnit, portSeverity,
-                        portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus,
-                        isOpen: true, createdAt: new Date()
-                    };
-
-                    logger.info("insert opened alarm in Alarm model", { jobId, portId: alarm.portId });
-                    const insertedAlarm = await Alarm.create(alarmData);
-
-                    logger.info("insert opened alarm in AlarmHistory model", { jobId, alarmId: insertedAlarm.alarmId });
-                    const alarmHistory = await AlarmHistory.create({
-                        alarmId: insertedAlarm.alarmId, alarmType, portId, portNo, portName, portValue, portUnit,
-                        portSeverity, portDescription, portIdentifier, portMetrics, rtuId, rtuSname, rtuStatus,
-                        alertStartTime: alertStartTime || null, openedAt: new Date()
-                    });
-
-                    return { alarmId: insertedAlarm.alarmId, alarmHistoryId: alarmHistory.alarmHistoryId };
-
-                });
-            }
-
-        });
-
-        const workResults = await Promise.all( works.map(work => work()) );
-        workResults.forEach(({ alarmId, alarmHistoryId }) => {
-            result.alarmIds.push(alarmId);
-            result.alarmHistoryIds.push(alarmHistoryId);
-        });
-
-        return result;
-
-    } catch(err) {
-        logger.error(err);
-        return result;
-    }
-};
-
-module.exports.writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
-    let { logger, jobId, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-
-    if(alarmIds.length < 1) {
-        logger.info("no alarms to write as alerts", { jobId });
-        return;
-    }
-
-    try {
-
-        const { AlarmHistory, TelegramUser, AlertUsers, Rtu, PicLocation, AlertStack, AlertModes } = useModel(sequelize);
-
-        logger.info("get alarms to write as alert", { jobId, alarmIds });
-        const alarmHistories = await AlarmHistory.findAll({
-            where: {
-                alarmHistoryId: { [Op.in]: alarmHistoryIds },
-            },
-            include: [{
-                model: Rtu,
-                required: true
-            }]
-        });
-
-        const regionalIds = [];
-        const witelIds = [];
-        const locIds = [];
-        alarmHistories.forEach(alarmHistory => {
-            const regionalId = alarmHistory.rtu.regionalId;
-            if(regionalIds.indexOf(regionalId) < 0)
-                regionalIds.push(regionalId);
-            const witelId = alarmHistory.rtu.witelId;
-            if(witelIds.indexOf(witelId) < 0)
-                witelIds.push(witelId);
-            const locId = alarmHistory.rtu.locationId;
-            if(locIds.indexOf(locId) < 0)
-                locIds.push(locId);
-        });
-
-        const works = {};
-        works.getGroupUsers = () => {
-            logger.info("get telegram groups of alarms", { jobId, alarmIds });
-            return TelegramUser.findAll({
-                where: {
-                    [Op.and]: [
-                        { isPic: false },
-                        {
-                            [Op.or]: [
-                                { level: "nasional" },
-                                { level: "regional", regionalId: { [Op.in]: regionalIds } },
-                                { level: "witel", witelId: { [Op.in]: witelIds } },
-                            ]
-                        }
-                    ]
-                },
-                order: [ "registId", "regionalId", "witelId" ],
-                include: [{
-                    model: AlertUsers,
-                    required: true,
-                    where: {
-                        [Op.and]: [
-                            { cronAlertStatus: true },
-                            { userAlertStatus: true }
-                        ]
-                    },
-                    include: [{
-                        model: AlertModes,
-                        required: true,
-                    }]
-                }]
-            });
-        };
-
-        works.getPicUsers = () => {
-            logger.info("get telegram user of alarm pics", { jobId, alarmIds });
-            return TelegramUser.findAll({
-                where: { isPic: true },
-                order: [ "picRegistId" ],
-                include: [{
-                    model: AlertUsers,
-                    required: true,
-                    where: {
-                        [Op.and]: [
-                            { cronAlertStatus: true },
-                            { userAlertStatus: true }
-                        ]
-                    },
-                    include: [{
-                        model: AlertModes,
-                        required: true,
-                    }]
-                }, {
-                    model: PicLocation,
-                    required: true,
-                    where: {
-                        locationId: { [Op.in]: locIds }
-                    }
-                }]
-            });
-        };
-
-        const [ groupUsers, picUsers ] = await Promise.all([
-            works.getGroupUsers(),
-            works.getPicUsers()
-        ]);
-        
-        const alertStackDatas = [];
-        alarmHistories.forEach(alarm => {
-
-            picUsers.forEach(user => {
-                const isUserMatch = isRuleMatch(toUnderscoredPlain(alarm), user.alertUser.alertMode.rules);
-                if(!isUserMatch) return;
-                user.picLocations.forEach(loc => {
-                    let isLocMatch = loc.locationId == alarm.rtu.locationId;
-                    if(!isLocMatch)
-                        return;
-                    alertStackDatas.push({
-                        alarmHistoryId: alarm.alarmHistoryId,
-                        telegramChatId: user.userId,
-                        status: "unsended",
-                        createdAt: new Date()
-                    });
-                    logger.info("founded pic of alarms", {
-                        alarmHistoryId: alarm.alarmHistoryId,
-                        telegramUserId: user.id,
-                        locationId: loc.locationId
-                    });
-                });
-            });
-
-            groupUsers.forEach(user => {
-                const isUserMatch = isRuleMatch(toUnderscoredPlain(alarm), user.alertUser.alertMode.rules);
-                if(!isUserMatch) return;
-
-                let isLocMatch = false;
-                if(user.level == "nasional")
-                    isLocMatch = true;
-                else if(user.level == "regional" && user.regionalId == alarm.rtu.regionalId)
-                    isLocMatch = true;
-                else if(user.level == "witel" && user.witelId == alarm.rtu.witelId)
-                    isLocMatch = true;
-
-                if(!isLocMatch)
-                    return;
-                alertStackDatas.push({
-                    alarmHistoryId: alarm.alarmHistoryId,
-                    telegramChatId: user.chatId,
-                    status: "unsended",
-                    createdAt: new Date()
-                });
-                logger.info("founded group of alarms", {
-                    alarmHistoryId: alarm.alarmHistoryId,
-                    telegramUserId: user.id
-                });
-            });
-            
-        });
-
-        if(alertStackDatas.length < 1) {
-            logger.info("no alert to write", { jobId, alarmIds });
-            return;
-        }
-
-        await AlertStack.bulkCreate(alertStackDatas);
-        logger.info("writing alert stack was done", { jobId, alertStackCount: alertStackDatas.length });
-
-    } catch(err) {
-        logger.info("failed to write alert stack", { jobId, alarmIds });
-        logger.error(err);
-    }
-};
+module.exports.getAlarmsOfWitels = defineAlarm.getAlarmsOfWitels;
+module.exports.getRtuAlarmsOfWitels = defineAlarm.getRtuAlarmsOfWitels;
+module.exports.getNotifiedClosedPortAlarms = defineAlarm.getNotifiedClosedPortAlarms;
+module.exports.closeAlarms = defineAlarm.closeAlarms;
+module.exports.updateAlarms = defineAlarm.updateAlarms;
+module.exports.updateOrCreateAlarms = defineAlarm.updateOrCreateAlarms;
+module.exports.closeRtuAlarms = defineAlarm.closeRtuAlarms;
+module.exports.createRtuAlarms = defineAlarm.createRtuAlarms;
+module.exports.writeAlertStack = defineAlarm.writeAlertStack;
+module.exports.writeAlertStackRtuDown = defineAlarm.writeAlertStackRtuDown;
 
 module.exports.syncAlarms = (witels, app = {}) => {
     const { watcher } = app;
@@ -546,12 +140,16 @@ module.exports.syncAlarms = (witels, app = {}) => {
 
         const logger = Logger.create({
             useStream: true,
-            fileName: "newosase-watcher"
+            fileName: "newosase-watcher",
+            dirName: path.resolve(__dirname, "../logs")
         });
 
         const witelIds = witels.map(witel => witel.id);
         logger.info("run alarms synchroniztion of witels", { witelIds });
-        const witelsAlarmDatas = await this.getAlarmsOfWitels(witelIds, { sequelize, logger });
+        const [ witelsAlarmDatas, witelsRtuAlarmDatas ] = await Promise.all([
+            this.getAlarmsOfWitels(witelIds, { sequelize, logger }),
+            this.getRtuAlarmsOfWitels(witelIds, { sequelize, logger })
+        ]);
 
         const closeSync = async () => {
 
@@ -562,69 +160,57 @@ module.exports.syncAlarms = (witels, app = {}) => {
         };
     
         const jobs = [];
-        const onJobDone = (job) => {
-            job.running = false;
-            job.done = true;
-            const { all, running, done } = this.getWitelThreadInfo(jobs);
-            logger.info("witel's job is closed", {
-                jobId: job.id,
-                runningJob: running,
-                doneJob: done,
-                allJob: all,
-            });
-
-            if(done.count === all.count)
-                closeSync();
-        };
-
         witels.forEach(witel => {
             const job = this.createWitelThread(witel);
 
-            job.onStart(async ({ jobId, closedAlarms, changedAlarms, newAlarms }) => {
+            job.onStart(async ({ jobId, ...jobResult }) => {
                 try {
 
-                    const [ ca, result1, result2 ] = await Promise.all([
+                    const { closedAlarms, changedAlarms, newAlarms, closedRtuAlarms, newRtuAlarms } = jobResult;
+
+                    const [ cp, closePortAlarms, openPortAlarms1, openPortAlarms2 ] = await Promise.all([
                         this.closeAlarms(closedAlarms, { logger, jobId, sequelize }),
+                        this.getNotifiedClosedPortAlarms(closedAlarms, { logger, jobId, sequelize }),
                         this.updateAlarms(changedAlarms, { logger, jobId, sequelize }),
-                        this.updateOrCreateAlarms(newAlarms, { logger, jobId, sequelize })
+                        this.updateOrCreateAlarms(newAlarms, { logger, jobId, sequelize }),
+                        this.closeRtuAlarms(closedRtuAlarms, { logger, jobId, sequelize }),
+                        this.createRtuAlarms(newRtuAlarms, { logger, jobId, sequelize }),
                     ]);
 
-                    logger.info("alarms has been written", { result1, result2 });
+                    logger.info("alarms has been written", { openPortAlarms1, openPortAlarms2 });
 
-                    const alarmIds = [ ...result1.alarmIds, ...result2.alarmIds ];
-                    const alarmHistoryIds = [ ...result1.alarmHistoryIds, ...result2.alarmHistoryIds ];
+                    const openPortAlarmIds = [ ...openPortAlarms1.alarmIds, ...openPortAlarms2.alarmIds ];
+                    const openPortAlarmHistoryIds = [ ...openPortAlarms1.alarmHistoryIds, ...openPortAlarms2.alarmHistoryIds ];
 
-                    job.alarmWrite({ alarmIds, alarmHistoryIds });
+                    await Promise.all([
+                        this.writeAlertStack(witel, openPortAlarmIds, openPortAlarmHistoryIds, "open-port", { logger, sequelize, jobId }),
+                        this.writeAlertStack(witel, closePortAlarms.alarmIds, closePortAlarms.alarmHistoryIds, "close-port", { logger, sequelize, jobId }),
+                        this.writeAlertStackRtuDown(witel, { logger, sequelize, jobId })
+                    ]);
 
                 } catch(err) {
-                    job.error(err);
-                }
-            });
-
-            job.onAlarmWrite(async ({ jobId, alarmIds, alarmHistoryIds }) => {
-                try {
-
-                    await this.writeAlertStack(witel, alarmIds, alarmHistoryIds, { logger, jobId, sequelize });
+                    logger.info("witel's job got error", { jobId });
+                    logger.error(err);
+                } finally {
                     job.finish();
-
-                } catch(err) {
-                    job.error(err);
                 }
-            });
-        
-            job.onError(({ err }) => {
-                logger.info("witel's job got error", { jobId: job.id });
-                logger.error(err);
-                job.finish();
             });
     
-            job.onFinish(() => {
+            job.onFinish(({ jobId }) => {
                 try {
 
-                    onJobDone(job);
+                    job.running = false;
+                    job.done = true;
+                    const { all, running, done } = this.getWitelThreadInfo(jobs);
+                    logger.info("witel's job is closed", {
+                        jobId, runningJob: running, doneJob: done, allJob: all,
+                    });
+
+                    if(done.count === all.count)
+                        closeSync();
 
                 } catch(err) {
-                    logger.info("witel's job got error", { jobId: job.id });
+                    logger.info("witel's job got error", { jobId });
                     logger.error(err);
                     closeSync();
                 }
@@ -642,7 +228,8 @@ module.exports.syncAlarms = (witels, app = {}) => {
             jobsData: jobs.map(job => {
                 return { id: job.id, witel: job.witel.get({ plain: true }) };
             }),
-            witelsAlarmDatas
+            witelsAlarmDatas,
+            witelsRtuAlarmDatas
         };
     
         const workerDefineAlarm = new Worker(
@@ -651,9 +238,9 @@ module.exports.syncAlarms = (witels, app = {}) => {
         );
     
         workerDefineAlarm.on("message", workerData => {
-            const { jobId, closedAlarms, changedAlarms, newAlarms } = workerData;
+            const { jobId, closedAlarms, changedAlarms, newAlarms, closedRtuAlarms, newRtuAlarms } = workerData;
             const index = jobs.findIndex(job => job.id == jobId);
-            jobs[index].start({ closedAlarms, changedAlarms, newAlarms });
+            jobs[index].start({ closedAlarms, changedAlarms, newAlarms, closedRtuAlarms, newRtuAlarms });
         });
     
         workerDefineAlarm.on("error", err => {
@@ -666,253 +253,27 @@ module.exports.syncAlarms = (witels, app = {}) => {
 module.exports.watchNewosaseAlarmWitels = (witels) => {
     const errLogger = new ErrorLogger("alarmwatcher", "NODE CRON watch-newosase-alarm");
     watch(async (watcher) => {
-        try {
-            await this.syncAlarms(witels, { watcher });
-        } catch(err) {
-            await errLogger.catch(err).logTo("-4092116808");
-            throw err;
-        }
+        await this.syncAlarms(witels, { watcher });
     }, {
-        onError: err => console.error(err)
+        onError: async (err, continueLoop) => {
+            console.error(err);
+            console.info("sending error log");
+            await errLogger.catch(err).logTo("-4092116808");
+            console.info("continue loop");
+            continueLoop();
+        }
     });
 };
 
-module.exports.groupAlerts = (alerts, alertGroupsTarget, app = {}) => {
-    let { logger } = app;
-    logger = Logger.getOrCreate(logger);
-    logger.info("start to grouping alerts");
+module.exports.isTelegramErrorUserNotFound = telegramAlert.isTelegramErrorUserNotFound;
+module.exports.getTelgAlertStack = telegramAlert.getTelgAlertStack;
+module.exports.groupAlertStacks = telegramAlert.groupAlertStacks;
+module.exports.setTelgAlertAsSending = telegramAlert.setTelgAlertAsSending;
+module.exports.onTelgAlertSended = telegramAlert.onTelgAlertSended;
+module.exports.onTelgAlertUnsended = telegramAlert.onTelgAlertUnsended;
+module.exports.onTelgSendError = telegramAlert.onTelgSendError;
 
-    const chatIdGroups = [];
-    for(let i=0; i<alerts.length; i++) {
-        
-        let groupIndex = chatIdGroups.findIndex(group => group.chatId == alerts[i].telegramChatId);
-        if(groupIndex < 0) {
-            groupIndex = chatIdGroups.length;
-            chatIdGroups.push({
-                chatId: alerts[i].telegramChatId,
-                alerts: [],
-                alertsCount: 0
-            });
-        }
-
-        chatIdGroups[groupIndex].alerts.push(alerts[i].get({ plain: true }));
-        chatIdGroups[groupIndex].alertsCount++;
-
-    }
-    logger.info("alerts was grouped by chat ids", { chatIdGroupsCount: chatIdGroups.length });
-
-    const targetCount = Math.min(alertGroupsTarget, chatIdGroups.length);
-    const groups = [];
-    let i = 0;
-    while(i < targetCount) {
-        groups.push({
-            receivers: [ chatIdGroups[i] ],
-            alertsCount: chatIdGroups[i].alertsCount
-        });
-        i++;
-    }
-
-    while(i < chatIdGroups.length) {
-        let index = groups.findIndex(group => {
-            const minAlertsCount = Math.min(...groups.map(item => item.alertsCount));
-            return group.alertsCount === minAlertsCount;
-        });
-        groups[index].receivers.push(chatIdGroups[i]);
-        groups[index].alertsCount += chatIdGroups[i].alertsCount;
-        i++;
-    }
-
-    logger.info("alert groups was minimized", { groupsCount: groups.length });
-    return groups;
-};
-
-module.exports.getAlertStack = async (app = {}) => {
-    let { logger, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-    try {
-    
-        const {
-            AlertStack, AlarmHistory, TelegramUser, TelegramPersonalUser,
-            Rtu, Regional, Witel, Location, PicLocation
-        } = useModel(sequelize);
-    
-        const startDate = new Date();
-        startDate.setHours(startDate.getHours() - 6);
-        logger.info("reading unsended alert on stack", { createdAt: `>= ${ toDatetimeString(startDate) }` });
-
-        const alerts = await AlertStack.findAll({
-            where: {
-                status: "unsended",
-                createdAt: { [Op.gte]: startDate },
-                // telegramChatId: "1931357638"
-            },
-            include: [{
-                model: AlarmHistory,
-                required: true,
-                include: [{
-                    model: Rtu,
-                    required: true,
-                    include: [{
-                        model: Location,
-                        include: [{
-                            model: PicLocation,
-                            include: [{
-                                model: TelegramUser,
-                                include: [ TelegramPersonalUser ]
-                            }]
-                        }]
-                    }, {
-                        model: Regional,
-                        required: true
-                    }, {
-                        model: Witel,
-                        required: true
-                    }]
-                }]
-            }]
-        });
-        return alerts;
-
-    } catch(err) {
-        logger.error(err);
-        return [];
-    }
-};
-
-module.exports.setAlertAsSending = async (alertIds, app = {}) => {
-    let { logger, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-
-    if(alertIds.length < 1) {
-        logger.info("alerts is empty");
-        return [];
-    }
-    try {
-
-        const { AlertStack } = useModel(sequelize);
-        logger.info("update alert status as sending", { alertIds });
-        await AlertStack.update({ status: "sending" }, {
-            where: {
-                alertStackId: { [Op.in]: alertIds }
-            }
-        });
-
-    } catch(err) {
-        logger.error(err);
-    }
-
-};
-
-module.exports.onAlertSended = async (alertId, app = {}) => {
-    let { logger, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-    const { AlertStack } = useModel(sequelize);
-    try {
-
-        logger.info("update alert status as success", { alertId });
-        await AlertStack.update({ status: "success" }, {
-            where: { alertStackId: alertId }
-        });
-
-    } catch(err) {
-        logger.error(err);
-    }
-};
-
-module.exports.isTelegramErrorUserNotFound = (errDescription) => {
-    const descrs = [
-        "Forbidden: bot was kicked from the supergroup chat",
-        "Forbidden: bot was kicked from the group chat",
-        "Bad Request: chat not found"
-    ];
-    for(let i=0; i<descrs.length; i++) {
-        if(errDescription.indexOf(descrs[i]) >= 0) {
-            i = descrs.length;
-            return true;
-        }
-    }
-    return false;
-};
-
-module.exports.onAlertUnsended = async (unsendedAlertIds, telegramErr, chatId, app = {}) => {
-    let { logger, sequelize } = app;
-    logger = Logger.getOrCreate(logger);
-    try {
-
-        const { AlertStack, AlertMessageError, TelegramUser, TelegramPersonalUser, PicLocation, AlertUsers } = useModel(sequelize);
-
-        let works = [];
-        works.push(() => {
-            logger.info("changing back alert status as unsended", { alertIds: unsendedAlertIds });
-            return AlertStack.update({ status: "unsended" }, {
-                where: {
-                    alertStackId: { [Op.in]: unsendedAlertIds }
-                }
-            });
-        });
-
-        if(telegramErr) {
-            works.push(() => {
-                logger.info("insert telegram error to AlertMessageError", { telegramErr });
-                return AlertMessageError.create({ ...telegramErr, createdAt: new Date() });
-            });
-        }
-        
-        await Promise.all( works.map(work => work()) );
-
-        const isUserNotFound = telegramErr && this.isTelegramErrorUserNotFound(telegramErr.description) ? true : false;
-        if(!isUserNotFound || !chatId)
-            return;
-
-        const telgUser = await TelegramUser.findOne({
-            where: { chatId }
-        });
-        logger.info("gotted telegram error user not found", { chatId, user: telgUser.get({ plain: true }) });
-        if(!telgUser)
-            return;
-
-        works = [];
-
-        if(telgUser.isPic) {
-            works.push(() => {
-                logger.info("delete user data from PicLocation", { userId: telgUser.id });
-                return PicLocation.destroy({
-                    where: { userId: telgUser.id }
-                });
-            });
-        }
-
-        if(telgUser.type == "private") {
-            works.push(() => {
-                logger.info("delete user data from TelegramPersonalUser", { userId: telgUser.id });
-                return TelegramPersonalUser.destroy({
-                    where: { userId: telgUser.id }
-                });
-            });
-        }
-
-        works.push(() => {
-            logger.info("delete user data from AlertUsers", { telegramUserId: telgUser.id });
-            return AlertUsers.destroy({
-                where: { telegramUserId: telgUser.id }
-            });
-        });
-
-        works.push(() => {
-            logger.info("delete user data from TelegramUser", { id: telgUser.id });
-            return TelegramUser.destroy({
-                where: { id: telgUser.id }
-            });
-        });
-
-        await Promise.all( works.map(work => work()) );
-
-    } catch(err) {
-        logger.error(err);
-    }
-};
-
-module.exports.sendAlert = (app = {}) => {
+module.exports.sendTelegramAlert = (app = {}) => {
     const { watcher } = app;
     if(watcher)
         addDelay(watcher, 10000);
@@ -922,41 +283,42 @@ module.exports.sendAlert = (app = {}) => {
         const sequelize = this.createSequelize({ max: config.telegramAlerting.maximumDbPool });
         const logger = Logger.create({
             useStream: true,
-            fileName: "telegram-alerting"
+            fileName: "telegram-alerting",
+            dirName: path.resolve(__dirname, "../logs")
         });
         
         const closeChecker = async () => {
             logger.info("alert checker was closed");
-            await sequelize.close();
+            // await sequelize.close();
             resolve();
         };
 
         logger.info("run alert checker");
-        const {
-            AlertStack, AlarmHistory, TelegramUser, TelegramPersonalUser,
-            Rtu, Regional, Witel, Location, PicLocation, AlertMessageError
-        } = useModel(sequelize);
-
-        const alerts = await this.getAlertStack({ logger, sequelize });
-        if(alerts.length < 1) {
-            logger.info("alerts is empty");
+        const { portAlerts, rtuAlerts } = await this.getTelgAlertStack({ logger, sequelize });
+        const totalAlertsCount = portAlerts.length + rtuAlerts.length;
+        if(totalAlertsCount < 1) {
+            logger.info("no alerts to send");
             closeChecker();
             return;
         }
 
-        const alertIds = alerts.map(alert => alert.alertStackId);
-        logger.info("setup alert stack", { alertsCount: alertIds.length, alertIds });
+        const alertsGroupDatas = this.groupAlertStacks(portAlerts, rtuAlerts, config.telegramAlerting.maximumThread, { logger });
         
-        const alertsGroupDatas = this.groupAlerts(alerts, config.telegramAlerting.maximumThread, { logger });
-        await this.setAlertAsSending(alertIds, { logger, sequelize });
+        const portAlertIds = portAlerts.map(alert => alert.alertStackId);
+        const rtuAlertIds = rtuAlerts.map(alert => alert.alertStackRtuId);
+        await this.setTelgAlertAsSending(portAlertIds, rtuAlertIds, { logger, sequelize });
+        logger.info("alert stack was setuped", { alertsCount: totalAlertsCount, portAlertIds, rtuAlertIds });
 
         const jobs = [];
-        alertIds.forEach(alertId => jobs.push({ id: alertId, done: false, success: null }));
+        portAlertIds.forEach(alertId => jobs.push({ id: `port-${ alertId }`, done: false, success: false }));
+        rtuAlertIds.forEach(alertId => jobs.push({ id: `rtu-${ alertId }`, done: false, success: false }));
+        logger.info("job was setuped", { jobIds: jobs.map(item => item.id) });
 
-        const onAlertDone = () => {
+        const getJobSummary = () => {
             const all = { count: jobs.length, jobIds: [] };
             const done = { count: 0, jobIds: [] };
             const success = { count: 0, jobIds: [] };
+            const fail = { count: 0, jobIds: [] };
             for(let i=0; i<jobs.length; i++) {
                 all.jobIds.push(jobs[i].id);
                 if(jobs[i].done) {
@@ -966,13 +328,12 @@ module.exports.sendAlert = (app = {}) => {
                 if(jobs[i].success) {
                     success.jobIds.push(jobs[i].id);
                     success.count++;
+                } else {
+                    fail.jobIds.push(jobs[i].id);
+                    fail.count++;
                 }
             }
-
-            logger.info("alert job is done", { all, done, success });
-            if(done.count == all.count) {
-                closeChecker();
-            }
+            return { all, done, success, fail };
         };
 
         const workerPath = path.resolve(__dirname, "./workers/worker-telegram-alert.js");
@@ -989,38 +350,79 @@ module.exports.sendAlert = (app = {}) => {
             });
 
             workerAlert.on("message", async (workerData) => {
-                const { success, alertStackId, unsendedAlertIds, telegramErr, retryTime, chatId } = workerData;
+                const { success, alert, chatId, telegramErr, retryTime } = workerData;
+
+                let currJobId = null;
+                if(alert.alertStackId !== undefined)
+                    currJobId = `port-${ alert.alertStackId }`;
+                if(alert.alertStackRtuId !== undefined)
+                    currJobId = `rtu-${ alert.alertStackRtuId }`;
+
                 if(success) {
 
-                    await this.onAlertSended(alertStackId, { logger, sequelize });
-                    const index = jobs.findIndex(item => item.id == alertStackId);
-                    jobs[index].success = true;
-                    jobs[index].done = true;
-                    onAlertDone();
-                    return;
-
-                }
-                
-                if(telegramErr) {
-
-                    if(retryTime)
-                        addDelay(watcher, retryTime);
-                    await this.onAlertUnsended(unsendedAlertIds, telegramErr, chatId, { logger, sequelize });
-                    unsendedAlertIds.forEach(alertId => {
-                        const index = jobs.findIndex(item => item.id == alertId);
-                        jobs[index].success = false;
+                    await this.onTelgAlertSended(alert, { logger, sequelize });
+                    try {
+                        const index = jobs.findIndex(item => item.id == currJobId);
+                        jobs[index].success = true;
                         jobs[index].done = true;
+                    } catch(err) {
+                        logger.info("error when updating job status as success", { jobId: currJobId, alert });
+                        logger.error(err);
+                        throw err;
+                    }
+
+                } else {
+
+                    const unsendedPortAlertIds = [];
+                    const unsendedRtuAlertIds = [];
+                    for(let i=0; i<jobs.length; i++) {
+                        if(!jobs[i].success) {
+                            jobs[i].done = true;
+                            let [jobType, alertId] = jobs[i].id.split("-");
+
+                            if(jobType == "port")
+                                unsendedPortAlertIds.push(alertId);
+                            if(jobType == "rtu")
+                                unsendedRtuAlertIds.push(alertId);
+                        }
+                    }
+
+                    const errorHandlers = [];
+
+                    errorHandlers.push(() => {
+                        return this.onTelgAlertUnsended(
+                            unsendedPortAlertIds,
+                            unsendedRtuAlertIds,
+                            { logger, sequelize }
+                        );
                     });
-                    onAlertDone();
-                    return;
+
+                    if(telegramErr) {
+                        if(retryTime)
+                            addDelay(watcher, retryTime);
+                        errorHandlers.push(() => this.onTelgSendError(telegramErr, chatId, { logger, sequelize }));
+                    }
+
+                    await Promise.all( errorHandlers.map(handle => handle()) );
 
                 }
 
-                logger.info("error gotted in workerAlert.onMessage handler", { workerData });
-                throw new Error("error gotted in workerAlert");
+                const jobSummary = getJobSummary();
+                logger.info("alert job is done", { jobId: currJobId, summary: jobSummary });
+
+                if(!success && !telegramErr) {
+                    logger.info("error thrown in workerAlert.onMessage handler", { workerData });
+                    throw new Error("error thrown in workerAlert");
+                }
+
+                if(jobSummary.done.count == jobSummary.all.count)
+                    closeChecker();
+
             });
 
             workerAlert.on("error", err => {
+                logger.info("error thrown inside workerAlert");
+                logger.error(err);
                 throw err;
             });
 
@@ -1032,13 +434,14 @@ module.exports.sendAlert = (app = {}) => {
 module.exports.watchAlertStack = () => {
     const errLogger = new ErrorLogger("alertwatcher", "NODE CRON watch-alert");
     watch(async (watcher) => {
-        try {
-            await this.sendAlert({ watcher });
-        } catch(err) {
-            await errLogger.catch(err).logTo("-4092116808");
-            throw err;
-        }
+        await this.sendTelegramAlert({ watcher });
     }, {
-        onError: err => console.error(err)
+        onError: async (err, continueLoop) => {
+            console.error(err);
+            console.info("sending error log");
+            await errLogger.catch(err).logTo("-4092116808");
+            console.info("continue loop");
+            continueLoop();
+        }
     });
 };

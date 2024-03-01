@@ -1,4 +1,5 @@
 const { DataTypes, Model } = require("sequelize");
+const inflection = require("inflection");
 
 class AlarmHistory extends Model {}
 
@@ -7,7 +8,7 @@ const modelOptions = {
     tableName: "alarm_history",
     underscored: true,
     indexes:[
-        { unique: false, fields:["alarmId"] }
+        { unique: false, fields: [ inflection.underscore("alarmId") ] }
     ],
     timestamps: false,
 };

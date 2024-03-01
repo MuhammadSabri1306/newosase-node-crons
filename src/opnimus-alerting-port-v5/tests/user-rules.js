@@ -1,8 +1,9 @@
-const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
-const { useSequelize, useModel, toUnderscoredPlain } = require("../apps/models");
 const { Op } = require("sequelize");
-const { isRuleMatch } = require("../apps/alert-mode");
+const { useSequelize, useModel, toUnderscoredPlain } = require("../apps/models");
 const { Logger } = require("../apps/logger");
+const { isRuleMatch } = require("../apps/alert-mode");
+const { getTelegramGroupTarget } = require("../apps/define-alarm");
+const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
 
 const writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
     let { logger, jobId, sequelize } = app;
@@ -182,7 +183,7 @@ const writeAlertStack = async (witel, alarmIds, alarmHistoryIds, app = {}) => {
     }
 };
 
-const main = async () => {
+const testCase1 = async () => {
 
     const sequelize = useSequelize(dbOpnimusNewConfig);
     const witelId = 254;
@@ -203,4 +204,19 @@ const main = async () => {
 
 };
 
-main();
+const testCase2 = async () => {
+    const sequelize = useSequelize(dbOpnimusNewConfig);
+
+    const groupUsers = await getTelegramGroupTarget([2], [43], { sequelize });
+    groupUsers.forEach(groupUser => {
+        const userRule = groupUser.alertUser.alertMode.rules;
+        const hasPlnRules = isRuleMatch({ port_sname: "Status PLN" }, userRule);
+        const hasGensetRules = isRuleMatch({ port_name: "Status DEG" }, userRule);
+        console.log({ telegramUserId: groupUser.id, hasPlnRules, hasGensetRules });
+    });
+
+    await sequelize.close();
+};
+
+// testCase1();
+testCase2();

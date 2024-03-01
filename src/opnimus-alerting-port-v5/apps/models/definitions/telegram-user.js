@@ -20,6 +20,10 @@ const fields = {
         type: DataTypes.STRING(255),
         allowNull: false
     },
+    messageThreadId: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
     userId: {
         type: DataTypes.STRING(255),
         allowNull: false

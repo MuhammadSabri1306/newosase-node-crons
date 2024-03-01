@@ -26,10 +26,21 @@ class Logger {
         return Logger.create({ useConsole: true });
     }
 
+    static generateChildThreadId() {
+        const currentTime = Date.now();
+        return currentTime.toString(16);
+    }
+
     createChildLogger(childThreadId = null) {
-        const parentThreadId = this.$threadId;
-        const threadId = `${ parentThreadId }-${ childThreadId || Date.now() }`;
-        return Logger.create(threadId);
+        if(!childThreadId)
+            childThreadId = Logger.generateChildThreadId();
+        const threadId = `${ this.$threadId }-${ childThreadId }`;
+        return new Logger(threadId, this.$options);
+    }
+
+    static initChildLogger(threadId, options) {
+        const parentLogger = new Logger(threadId, options);
+        return parentLogger.createChildLogger();
     }
 
     static createWinstonLogger({ threadId, useConsole, useStream, fileName, dirName }) {

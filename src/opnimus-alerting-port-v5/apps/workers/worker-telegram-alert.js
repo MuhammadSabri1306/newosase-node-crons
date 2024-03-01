@@ -1,19 +1,20 @@
 const { parentPort, workerData } = require("worker_threads");
 const { Logger } = require("../logger");
-const { useTelegramBot, sendAlerts } = require("../telegram-alert");
+const { useTelegramBot, sendTelgAlerts } = require("../telegram-alert");
 
 const { loggerConfig, alertGroup } = workerData;
-const logger = new Logger(loggerConfig.threadId, loggerConfig.options);
-const bot = useTelegramBot();
+const logger = Logger.initChildLogger(loggerConfig.threadId, loggerConfig.options);
+logger.info("starting worker-telegram-alert", { alertGroup });
 
-logger.info("starting worker-define-alarm", { alertGroup });
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 (async () => {
 
-    const jobs = alertGroup.receivers.map(({ chatId, alerts }) => {
+    const bot = useTelegramBot();
+
+    const jobs = alertGroup.receivers.map(({ chatId, messageThreadId, alerts }) => {
         const callback = result => parentPort.postMessage(result);
-        return sendAlerts(chatId, alerts, { logger, bot, callback });
+        return sendTelgAlerts(chatId, messageThreadId, alerts, { logger, bot, callback });
     });
 
     try {

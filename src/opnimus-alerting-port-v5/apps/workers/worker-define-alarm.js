@@ -2,7 +2,7 @@ const { parentPort, workerData } = require("worker_threads");
 const { Logger } = require("../logger");
 const { getNewosaseAlarms, filterNewosaseAlarms, defineAlarms } = require("../define-alarm");
 
-const createJobs = (jobs, witelsAlarmDatas, app = {}) => {
+const createJobs = (jobs, witelsAlarmDatas, witelsRtuAlarmDatas, app = {}) => {
     let { logger } = app;
     logger = Logger.getOrCreate(logger);
 
@@ -11,10 +11,17 @@ const createJobs = (jobs, witelsAlarmDatas, app = {}) => {
             const jobId = job.id;
             const witelId = job.witel.id;
 
-            const prevAlarms = witelId in witelsAlarmDatas ? witelsAlarmDatas[witelId] : [];
-            if(!Array.isArray(prevAlarms)) {
-                throw new Error(`expecting prevAlarms is is array, retrieved ${ typeof prevAlarms }`);
+            const prevPortAlarms = witelId in witelsAlarmDatas ? witelsAlarmDatas[witelId] : [];
+            if(!Array.isArray(prevPortAlarms)) {
+                throw new Error(`expecting prevPortAlarms is is array, retrieved ${ typeof prevPortAlarms }`);
             }
+
+            const prevRtuAlarms = witelId in witelsRtuAlarmDatas ? witelsRtuAlarmDatas[witelId] : [];
+            if(!Array.isArray(prevRtuAlarms)) {
+                throw new Error(`expecting prevRtuAlarms is is array, retrieved ${ typeof prevRtuAlarms }`);
+            }
+
+            const prevAlarms = { portAlarms: prevPortAlarms, rtuAlarms: prevRtuAlarms };
 
             const newosaseAlarms = await getNewosaseAlarms(witelId, app);
             let currAlarms = newosaseAlarms;
@@ -33,26 +40,29 @@ const createJobs = (jobs, witelsAlarmDatas, app = {}) => {
                 currAlarm: newosaseAlarms.length
             });
 
-            const { closedAlarms, changedAlarms, newAlarms } = defineAlarms(prevAlarms, currAlarms, app);
+            const resultAlarms = defineAlarms(prevAlarms, currAlarms, app);
+            const { closedAlarms, changedAlarms, newAlarms, closedRtuAlarms, newRtuAlarms } = resultAlarms;
             logger.info("alarms was defined", {
                 jobId,
                 witelId,
                 closedAlarmsCount: closedAlarms.length,
                 changedAlarmsCount: changedAlarms.length,
-                newAlarmsCount: newAlarms.length
+                newAlarmsCount: newAlarms.length,
+                closedRtuAlarmsCount: closedRtuAlarms.length,
+                newRtuAlarmsCount: newRtuAlarms.length,
             });
 
-            parentPort.postMessage({ jobId, closedAlarms, changedAlarms, newAlarms });
+            parentPort.postMessage({ jobId, closedAlarms, changedAlarms, newAlarms, closedRtuAlarms, newRtuAlarms });
         };
     });
 };
 
-const { loggerConfig, jobsData, witelsAlarmDatas } = workerData;
-const logger = new Logger(loggerConfig.threadId, loggerConfig.options);
+const { loggerConfig, jobsData, witelsAlarmDatas, witelsRtuAlarmDatas } = workerData;
+const logger = Logger.initChildLogger(loggerConfig.threadId, loggerConfig.options);
 
 const witelIds = jobsData.map(job => job.witel.id);
 logger.info("starting worker-define-alarm", { witelIds });
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-const witelJobs = createJobs(jobsData, witelsAlarmDatas, { logger });
+const witelJobs = createJobs(jobsData, witelsAlarmDatas, witelsRtuAlarmDatas, { logger });
 Promise.all( witelJobs.map(run => run()) );

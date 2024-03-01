@@ -7,6 +7,7 @@ const { useRegionalModel } = require("./definitions/regional");
 const { useWitelModel } = require("./definitions/witel");
 const { useRtuModel } = require("./definitions/rtu");
 const { useAlertStackModel } = require("./definitions/alert-stack");
+const { useAlertStackRtuModel } = require("./definitions/alert-stack-rtu");
 const { useAlertModesModel } = require("./definitions/alert-modes");
 const { useAlertUsersModel } = require("./definitions/alert-users");
 const { useTelegramUserModel } = require("./definitions/telegram-user");
@@ -14,6 +15,7 @@ const { useTelegramPersonalUserModel } = require("./definitions/telegram-persona
 const { useLocationModel } = require("./definitions/location");
 const { usePicLocationModel } = require("./definitions/pic-location");
 const { useAlertMessageErrorModel } = require("./definitions/alert-message-error");
+const { useAlarmHistoryRtuModel } = require("./definitions/alarm-history-rtu");
 
 module.exports.useSequelize = (config = {}) => {
     const { database, host, user, password, options } = config;
@@ -35,10 +37,12 @@ module.exports.useModel = (sequelize) => {
 
     const Alarm = useAlarmModel(sequelize);
     const AlarmHistory = useAlarmHistoryModel(sequelize);
+    const AlarmHistoryRtu = useAlarmHistoryRtuModel(sequelize);
     const Regional = useRegionalModel(sequelize);
     const Witel = useWitelModel(sequelize);
     const Rtu = useRtuModel(sequelize);
     const AlertStack = useAlertStackModel(sequelize);
+    const AlertStackRtu = useAlertStackRtuModel(sequelize);
     const AlertModes = useAlertModesModel(sequelize);
     const AlertUsers = useAlertUsersModel(sequelize);
     const TelegramUser = useTelegramUserModel(sequelize);
@@ -57,19 +61,24 @@ module.exports.useModel = (sequelize) => {
 
     Rtu.belongsTo(Regional, { foreignKey: "regionalId", targetKey: "id" });
     Rtu.belongsTo(Witel, { foreignKey: "witelId", targetKey: "id" });
-    Rtu.hasMany(Alarm, { foreignKey: "rtuSname", targetKey: "sname" });
     Rtu.belongsTo(Location, { foreignKey: "locationId", targetKey: "id" });
+    Rtu.hasMany(Alarm, { foreignKey: "rtuSname", sourceKey: "sname" });
+    Rtu.hasMany(AlarmHistory, { foreignKey: "rtuSname", sourceKey: "sname" });
+    Rtu.hasMany(AlarmHistoryRtu, { foreignKey: "rtuSname", sourceKey: "sname" });
 
     Alarm.hasMany(AlarmHistory, { foreignKey: "alarmId" });
     Alarm.belongsTo(Rtu, { foreignKey: "rtuSname", targetKey: "sname" });
     
     AlarmHistory.belongsTo(Alarm, { foreignKey: "alarmId", targetKey: "alarmId" });
     AlarmHistory.belongsTo(Rtu, { foreignKey: "rtuSname", targetKey: "sname" });
-    AlarmHistory.hasMany(AlertStack, { foreignKey: "alarmHistoryId", targetKey: "alarmHistoryId" });
+    AlarmHistory.hasMany(AlertStack, { foreignKey: "alarmHistoryId" });
 
-    AlertStack.belongsTo(AlarmHistory, { foreignKey: "alarmHistoryId", targetKey: "alarmHistoryId" });
+    AlarmHistoryRtu.belongsTo(Rtu, { foreignKey: "rtuSname", targetKey: "sname" });
+    AlarmHistoryRtu.hasMany(AlertStackRtu, { foreignKey: "alarmHistoryRtuId" });
 
     AlertModes.hasMany(AlertUsers, { foreignKey: "modeId", targetKey: "id" });
+    AlertStack.belongsTo(AlarmHistory, { foreignKey: "alarmHistoryId", targetKey: "alarmHistoryId" });
+    AlertStackRtu.belongsTo(AlarmHistoryRtu, { foreignKey: "alarmHistoryRtuId", targetKey: "alarmHistoryRtuId" });
 
     TelegramUser.hasOne(TelegramPersonalUser, { foreignKey: "userId", targetKey: "id" });
     TelegramUser.hasOne(AlertUsers, { foreignKey: "telegramUserId", targetKey: "id" });
@@ -89,17 +98,19 @@ module.exports.useModel = (sequelize) => {
     return {
         Alarm,
         AlarmHistory,
+        AlarmHistoryRtu,
+        AlertStack,
+        AlertStackRtu,
+        AlertModes,
+        AlertUsers,
+        AlertMessageError,
+        TelegramUser,
+        TelegramPersonalUser,
         Regional,
         Witel,
         Rtu,
-        AlertStack,
-        AlertModes,
-        AlertUsers,
-        TelegramUser,
-        TelegramPersonalUser,
         Location,
         PicLocation,
-        AlertMessageError,
     };
 };
 

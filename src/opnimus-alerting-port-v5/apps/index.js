@@ -126,6 +126,11 @@ module.exports.createRtuAlarms = defineAlarm.createRtuAlarms;
 module.exports.writeAlertStack = defineAlarm.writeAlertStack;
 module.exports.writeAlertStackRtuDown = defineAlarm.writeAlertStackRtuDown;
 
+module.exports.writeAlertStackClosePort = async (witel, closedAlarms, app = {}) => {
+    const { alarmIds, alarmHistoryIds } = await this.getNotifiedClosedPortAlarms(closedAlarms, app);
+    await this.writeAlertStack(witel, alarmIds, alarmHistoryIds, "close-port", app);
+};
+
 module.exports.syncAlarms = (witels, app = {}) => {
     const { watcher } = app;
     if(watcher)
@@ -168,9 +173,8 @@ module.exports.syncAlarms = (witels, app = {}) => {
 
                     const { closedAlarms, changedAlarms, newAlarms, closedRtuAlarms, newRtuAlarms } = jobResult;
 
-                    const [ cp, closePortAlarms, openPortAlarms1, openPortAlarms2 ] = await Promise.all([
+                    const [ cp, openPortAlarms1, openPortAlarms2 ] = await Promise.all([
                         this.closeAlarms(closedAlarms, { logger, jobId, sequelize }),
-                        this.getNotifiedClosedPortAlarms(closedAlarms, { logger, jobId, sequelize }),
                         this.updateAlarms(changedAlarms, { logger, jobId, sequelize }),
                         this.updateOrCreateAlarms(newAlarms, { logger, jobId, sequelize }),
                         this.closeRtuAlarms(closedRtuAlarms, { logger, jobId, sequelize }),
@@ -183,9 +187,9 @@ module.exports.syncAlarms = (witels, app = {}) => {
                     const openPortAlarmHistoryIds = [ ...openPortAlarms1.alarmHistoryIds, ...openPortAlarms2.alarmHistoryIds ];
 
                     await Promise.all([
-                        this.writeAlertStack(witel, openPortAlarmIds, openPortAlarmHistoryIds, "open-port", { logger, sequelize, jobId }),
-                        this.writeAlertStack(witel, closePortAlarms.alarmIds, closePortAlarms.alarmHistoryIds, "close-port", { logger, sequelize, jobId }),
-                        this.writeAlertStackRtuDown(witel, { logger, sequelize, jobId })
+                        this.writeAlertStack(witel, openPortAlarmIds, openPortAlarmHistoryIds, "open-port", { logger, jobId, sequelize }),
+                        this.writeAlertStackClosePort(witel, closedAlarms, { logger, jobId, sequelize }),
+                        this.writeAlertStackRtuDown(witel, { logger, jobId, sequelize })
                     ]);
 
                 } catch(err) {
@@ -336,6 +340,19 @@ module.exports.sendTelegramAlert = (app = {}) => {
             return { all, done, success, fail };
         };
 
+        const getJobIdByAlert = alert => {
+            let jobId = null;
+            if(alert.alertStackId !== undefined)
+                jobId = `port-${ alert.alertStackId }`;
+            else if(alert.alertStackRtuId !== undefined)
+                jobId = `rtu-${ alert.alertStackRtuId }`;
+            return jobId;
+        };
+
+        const getJobIndexByJobId = jobId => {
+            return jobs.findIndex(item => item.id == jobId);
+        };
+
         const workerPath = path.resolve(__dirname, "./workers/worker-telegram-alert.js");
         alertsGroupDatas.forEach(alertGroup => {
 
@@ -350,45 +367,51 @@ module.exports.sendTelegramAlert = (app = {}) => {
             });
 
             workerAlert.on("message", async (workerData) => {
-                const { success, alert, chatId, telegramErr, retryTime } = workerData;
-
-                let currJobId = null;
-                if(alert.alertStackId !== undefined)
-                    currJobId = `port-${ alert.alertStackId }`;
-                if(alert.alertStackRtuId !== undefined)
-                    currJobId = `rtu-${ alert.alertStackRtuId }`;
+                const { success, alert, unsendedAlerts, telegramErrData } = workerData;
 
                 if(success) {
 
                     await this.onTelgAlertSended(alert, { logger, sequelize });
+                    let currJobId = null;
+                    let currJobIndex = null;
                     try {
-                        const index = jobs.findIndex(item => item.id == currJobId);
-                        jobs[index].success = true;
-                        jobs[index].done = true;
+                        currJobId = getJobIdByAlert(alert);
+                        currJobIndex = getJobIndexByJobId(currJobId);
+                        jobs[currJobIndex].done = true;
+                        jobs[currJobIndex].success = true;
                     } catch(err) {
-                        logger.info("error when updating job status as success", { jobId: currJobId, alert });
+                        logger.info("error when updating job status as success", { jobId: currJobId, jobIndex: currJobIndex, alert });
                         logger.error(err);
                         throw err;
                     }
 
                 } else {
 
+                    const unsendedJobIds = [];
                     const unsendedPortAlertIds = [];
                     const unsendedRtuAlertIds = [];
-                    for(let i=0; i<jobs.length; i++) {
-                        if(!jobs[i].success) {
-                            jobs[i].done = true;
-                            let [jobType, alertId] = jobs[i].id.split("-");
+                    unsendedAlerts.port.forEach(alertId => {
+                        unsendedJobIds.push(`port-${ alertId }`);
+                        unsendedPortAlertIds.push(alertId);
+                    });
+                    unsendedAlerts.rtu.forEach(alertId => {
+                        unsendedJobIds.push(`rtu-${ alertId }`);
+                        unsendedRtuAlertIds.push(alertId);
+                    });
 
-                            if(jobType == "port")
-                                unsendedPortAlertIds.push(alertId);
-                            if(jobType == "rtu")
-                                unsendedRtuAlertIds.push(alertId);
+                    for(let i=0; i<unsendedJobIds.length; i++) {
+                        let jobIndex = null;
+                        try {
+                            jobIndex = getJobIndexByJobId(unsendedJobIds[i]);
+                            jobs[jobIndex].done = true;
+                        } catch(err) {
+                            logger.info("error when updating job status as success", { jobId: unsendedJobIds[i], jobIndex, alert });
+                            logger.error(err);
+                            throw err;
                         }
                     }
 
                     const errorHandlers = [];
-
                     errorHandlers.push(() => {
                         return this.onTelgAlertUnsended(
                             unsendedPortAlertIds,
@@ -397,10 +420,13 @@ module.exports.sendTelegramAlert = (app = {}) => {
                         );
                     });
 
-                    if(telegramErr) {
-                        if(retryTime)
-                            addDelay(watcher, retryTime);
-                        errorHandlers.push(() => this.onTelgSendError(telegramErr, chatId, { logger, sequelize }));
+                    if(telegramErrData) {
+                        if(telegramErrData.retryTime)
+                            addDelay(watcher, telegramErrData.retryTime);
+                        errorHandlers.push(() => {
+                            const { chatId, telegramErr } = telegramErrData;
+                            return this.onTelgSendError(telegramErr, chatId, { logger, sequelize });
+                        });
                     }
 
                     await Promise.all( errorHandlers.map(handle => handle()) );
@@ -408,9 +434,13 @@ module.exports.sendTelegramAlert = (app = {}) => {
                 }
 
                 const jobSummary = getJobSummary();
-                logger.info("alert job is done", { jobId: currJobId, summary: jobSummary });
+                if(alert) {
+                    logger.info("alert job is done", { jobId: getJobIdByAlert(alert), summary: jobSummary });
+                } else {
+                    logger.info("alert job is done", { summary: jobSummary });
+                }
 
-                if(!success && !telegramErr) {
+                if(!success && !telegramErrData) {
                     logger.info("error thrown in workerAlert.onMessage handler", { workerData });
                     throw new Error("error thrown in workerAlert");
                 }
@@ -420,7 +450,7 @@ module.exports.sendTelegramAlert = (app = {}) => {
 
             });
 
-            workerAlert.on("error", err => {
+            workerAlert.on("error", async (err) => {
                 logger.info("error thrown inside workerAlert");
                 logger.error(err);
                 throw err;

@@ -94,7 +94,7 @@ module.exports.getNotifiedClosedPortAlarms = async (closedAlarms, app = {}) => {
     try {
 
         const { Alarm, AlarmHistory } = useModel(sequelize);
-        const alarmIds = closedAlarms.map(item => item.alarmId);
+        const closedAlarmIds = closedAlarms.map(item => item.alarmId);
 
         logger.info("get closed alarms to notified", { jobId, alarmIds });
         const closedAlarmGroups = await AlarmHistory.findAll({
@@ -103,7 +103,7 @@ module.exports.getNotifiedClosedPortAlarms = async (closedAlarms, app = {}) => {
                 [sequelize.literal("MAX(alarm_history_id)"), "alarmHistoryId"]
             ],
             where: {
-                alarmId: alarmIds,
+                alarmId: { [Op.in]: closedAlarmIds },
                 portName: { [Op.in]: ["Status PLN", "Status DEG"] }
             },
             group: "alarmId"

@@ -1,4 +1,5 @@
 const { Telegraf, TelegramError } = require("telegraf");
+const { FetchError, AbortError } = require("node-fetch");
 const configBot = require("../../env/bot/opnimus-new-bot");
 const { Logger } = require("./logger");
 const { Op } = require("sequelize");
@@ -730,6 +731,7 @@ module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}
     logger = Logger.getOrCreate(logger);
 
     let lastAlert = null;
+    const sendedAlerts = { port: [], rtu: [] };
     try {
         let i = 0;
         while(i < alerts.length) {
@@ -748,6 +750,11 @@ module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}
             await bot.telegram.sendMessage(chatId, messageText, reqOptions);
             logger.info("alert message was sended", { chatId, ...lastAlert });
 
+            if(lastAlert.alertStackId !== undefined)
+                sendedAlerts.port.push(lastAlert.alertStackId);
+            if(lastAlert.alertStackRtuId !== undefined)
+                sendedAlerts.rtu.push(lastAlert.alertStackRtuId);
+
             callback && callback({
                 success: true,
                 alert: lastAlert,
@@ -758,32 +765,59 @@ module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}
             
         }
     } catch(err) {
+
+        const unsendedAlerts = { port: [], rtu: [] };
+        for(let i=0; i<alerts.length; i++) {
+            if(alerts[i].alertStackId !== undefined) {
+                if(sendedAlerts.port.indexOf(alerts[i].alertStackId) < 0)
+                    unsendedAlerts.port.push(alerts[i].alertStackId);
+            } else if(alerts[i].alertStackRtuId !== undefined) {
+                if(sendedAlerts.rtu.indexOf(alerts[i].alertStackRtuId) < 0)
+                    unsendedAlerts.rtu.push(alerts[i].alertStackRtuId);
+            }
+        }
         
         if(err instanceof TelegramError) {
             const retryTime = catchRetryTime(err.description);
             logger.info("failed to send alert message", {
-                alert: lastAlert,
                 chatId,
-                retryTime
+                retryTime,
+                alert: lastAlert,
+                unsendedAlerts
             });
 
             logger.error(err);
             callback && callback({
                 success: false,
                 alert: lastAlert,
+                unsendedAlerts,
+                telegramErrData: {
+                    chatId,
+                    telegramErr: {
+                        alertId: lastAlert.alertStackId || lastAlert.alertStackRtuId,
+                        description: err.description,
+                        errorCode: err.code,
+                        response: JSON.stringify(err.response)
+                    },
+                    retryTime: retryTime * 1000
+                }
+            });
+        } else if(err instanceof FetchError || err instanceof  AbortError) {
+            logger.info("error to fetching telegram api", {
                 chatId,
-                telegramErr: {
-                    alertId: lastAlert.alertStackId || lastAlert.alertStackRtuId,
-                    description: err.description,
-                    errorCode: err.code,
-                    response: JSON.stringify(err.response)
-                },
-                retryTime: retryTime * 1000
+                alert: lastAlert,
+                unsendedAlerts
+            });
+            logger.error(err);
+            callback && callback({
+                success: false,
+                unsendedAlerts
             });
         } else {
-            logger.info("failed to send alert message", {
+            logger.info("uncaught error was thrown when sending alerts", {
+                chatId,
                 alert: lastAlert,
-                chatId
+                unsendedAlerts
             });
             logger.error(err);
             throw err;

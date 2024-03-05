@@ -1,5 +1,5 @@
 const { Telegraf, TelegramError } = require("telegraf");
-const { FetchError, AbortError } = require("node-fetch");
+const { FetchError } = require("node-fetch");
 const configBot = require("../../env/bot/opnimus-new-bot");
 const { Logger } = require("./logger");
 const { Op } = require("sequelize");
@@ -287,7 +287,7 @@ module.exports.onTelgAlertSended = async (alert, app = {}) => {
             
             const { AlertStackRtu } = useModel(sequelize);
             logger.info("update telegram RTU alert status as success", { alertStackRtuId });
-            await AlertStack.update({ status: "success" }, {
+            await AlertStackRtu.update({ status: "success" }, {
                 where: { alertStackRtuId }
             });
 
@@ -541,7 +541,7 @@ module.exports.extractPortAlertData = (alertData) => {
 };
 
 module.exports.extractRtuAlertData = (alertData) => {
-    const { alarmHistoryRtu: alarmHistoryData, ...alert } = alertData;
+    const { alarmHistoryRtu: alarmHistoryRtuData, ...alert } = alertData;
     const { rtu: rtuData, ...alarmHistoryRtu } = alarmHistoryRtuData;
     const { location: locationData, regional, witel, ...rtu } = rtuData;
     const { picLocations: picLocationsData, ...location } = locationData;
@@ -668,15 +668,15 @@ module.exports.createTelgTextRtuDown = (alertItem) => {
     const tregIcon = this.getRegionalIcon(regional);
 
     const msg = TelegramText.create()
-        .addText("🚨").addBold(`Alarm: ${ alarmHistoryRtu.rtuSname } >30 Menit!`).addText("🚨").addLine()
+        .addText("🚨").addBold(`Alarm: ${ alarmHistoryRtu.rtuSname } >5 Menit!`).addText("🚨").addLine()
         .addItalic(`Pada ${ datetimeStr }`).addLine(2)
-        .addText("Terpantau").addBold(" RTU DOWN ").addText("lebih dari 30 Menit dengan detail:").addLine()
+        .addText("Terpantau").addBold(" RTU DOWN ").addText("lebih dari 5 Menit dengan detail:").addLine()
         .startCode()
         .addText(`${ tregIcon } Regional  : ${ regional.name }`).addLine()
         .addText(`🏢 Witel     : ${ witel.witelName }`).addLine()
         .addText(`🏬 Lokasi    : ${ location.locationName }`).addLine()
         .addText(`🏪 Node Name : ${ rtu.name }`).addLine()
-        .addText("❌Tipe Alarm : RTU DOWN Lebih dari 30 Menit").addLine()
+        .addText("❌Tipe Alarm : RTU DOWN Lebih dari 5 Menit").addLine()
         .addText(`📅 Waktu     : ${ datetimeStr }`)
         .endCode().addLine(2);
 
@@ -704,7 +704,7 @@ module.exports.createTelgTextRtuDown = (alertItem) => {
 
     msg.addText(" ❕Mohon untuk segera melakukan Pengecekan lokasi karena status RTU Down,")
         .addText(" berikut rekomendasi saran yang bisa diberikan:")
-        .newLine().startCode()
+        .addLine().startCode()
         .addText("📌Cek Catuan RTU baik LAN atau Power").addLine()
         .addText("📌Cek melalui /rtu di OPNIMUS apakah hanya flicker atau bukan").addLine()
         .addText("📌Restart RTU apabila masih terkendala")
@@ -776,7 +776,7 @@ module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}
                     unsendedAlerts.rtu.push(alerts[i].alertStackRtuId);
             }
         }
-        
+
         if(err instanceof TelegramError) {
             const retryTime = catchRetryTime(err.description);
             logger.info("failed to send alert message", {
@@ -802,7 +802,7 @@ module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}
                     retryTime: retryTime * 1000
                 }
             });
-        } else if(err instanceof FetchError || err instanceof  AbortError) {
+        } else if(err instanceof FetchError || (err instanceof Error && err.name === "AbortError")) {
             logger.info("error to fetching telegram api", {
                 chatId,
                 alert: lastAlert,

@@ -356,7 +356,7 @@ module.exports.createRtuAlarms = async (newRtuAlarms, app = {}) => {
         const alarmHistoryRtuDatas = newRtuAlarms.map(item => {
             const currDate = new Date();
             const nextAlertDate = item.alertStartTime ? new Date(item.alertStartTime) : new Date(currDate);
-            nextAlertDate.setMinutes( nextAlertDate.getMinutes() + 30 );
+            nextAlertDate.setMinutes( nextAlertDate.getMinutes() + 5 );
             insertedRtuSnames.push(item.rtuSname);
             return {
                 rtuId: item.rtuId,
@@ -617,7 +617,7 @@ module.exports.writeAlertStackRtuDown = async (witel, app = {}) => {
         const alarmHistoryRtus = await AlarmHistoryRtu.findAll({
             where: {
                 isOpen: true,
-                nextAlertAt: { [Op.gte]: currDate }
+                nextAlertAt: { [Op.lte]: currDate }
             },
             include: [{
                 model: Rtu,
@@ -869,19 +869,24 @@ module.exports.defineAlarms = (prevAlarms, currPortAlarms) => {
             });
         }
 
-        if(this.isRtuDown(currPortAlarms[i].rtu_status)) {
-            for(let k=0; k<prevRtuAlarms.length; k++) {
-                let isRtuMatch = this.isAlarmRtuMatch(prevRtuAlarms[k], currPortAlarms[i]);
-                if(isRtuMatch) {
-                    newRtuAlarms.push({
-                        rtuId: currPortAlarms[i].rtu_id,
-                        rtuSname: currPortAlarms[i].rtu_sname,
-                        rtuStatus: currPortAlarms[i].rtu_status.toLowerCase(),
-                        alertStartTime: currPortAlarms[i].alert_start_time
-                    });
-                }
-            }
-        }
+        // if(this.isRtuDown(currPortAlarms[i].rtu_status)) {
+        //     let hasMatches = false;
+        //     for(let k=0; k<prevRtuAlarms.length; k++) {
+        //         let isRtuMatch = this.isAlarmRtuMatch(prevRtuAlarms[k], currPortAlarms[i]);
+        //         if(isRtuMatch) {
+        //             hasMatches = true;
+        //             k = prevRtuAlarms.length;
+        //         }
+        //     }
+        //     if(!hasMatches) {
+        //         newRtuAlarms.push({
+        //             rtuId: currPortAlarms[i].rtu_id,
+        //             rtuSname: currPortAlarms[i].rtu_sname,
+        //             rtuStatus: currPortAlarms[i].rtu_status.toLowerCase(),
+        //             alertStartTime: currPortAlarms[i].alert_start_time
+        //         });
+        //     }
+        // }
 
     }
 
@@ -910,7 +915,7 @@ module.exports.defineAlarms = (prevAlarms, currPortAlarms) => {
         }
         if(!hasMatches) {
             closedRtuAlarms.push({
-                alarmHistoryRtuId: prevPortAlarms[m].alarmHistoryRtuId
+                alarmHistoryRtuId: prevRtuAlarms[m].alarmHistoryRtuId
             });
         }
     }

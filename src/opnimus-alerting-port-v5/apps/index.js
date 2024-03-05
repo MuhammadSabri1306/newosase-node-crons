@@ -189,7 +189,7 @@ module.exports.syncAlarms = (witels, app = {}) => {
                     await Promise.all([
                         this.writeAlertStack(witel, openPortAlarmIds, openPortAlarmHistoryIds, "open-port", { logger, jobId, sequelize }),
                         this.writeAlertStackClosePort(witel, closedAlarms, { logger, jobId, sequelize }),
-                        this.writeAlertStackRtuDown(witel, { logger, jobId, sequelize })
+                        // this.writeAlertStackRtuDown(witel, { logger, jobId, sequelize })
                     ]);
 
                 } catch(err) {
@@ -466,6 +466,7 @@ module.exports.watchAlertStack = () => {
     watch(async (watcher) => {
         await this.sendTelegramAlert({ watcher });
     }, {
+        onDelay: (delayTime) => console.info(`delaying ${ delayTime }ms`),
         onError: async (err, continueLoop) => {
             console.error(err);
             console.info("sending error log");

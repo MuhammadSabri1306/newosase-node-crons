@@ -4,7 +4,7 @@ class AlarmHistoryRtu extends Model {}
 
 const modelOptions = {
     modelName: "alarmHistoryRtu",
-    tableName: "alarm-history-rtu",
+    tableName: "alarm_history_rtu",
     underscored: true,
     timestamps: false,
 };

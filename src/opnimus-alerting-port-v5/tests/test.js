@@ -1,8 +1,9 @@
 const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
 const { Op } = require("sequelize");
-const { useSequelize, useModel } = require("../apps/models");
-const { createAlertMessage } = require("../apps/telegram-alert");
 const { Telegraf } = require("telegraf");
+const { useSequelize, useModel } = require("../apps/models");
+const { useTelegramBot, sendTelgAlerts, createAlertMessage } = require("../apps/telegram-alert");
+const { Logger } = require("../apps/logger");
 const configBot = require("../../env/bot/opnimus-new-bot");
 
 const testCase1 = async () => {
@@ -162,6 +163,82 @@ const testCase3 = async () => {
 
 };
 
+const testCase4 = async () => {
+
+    const logger = Logger.create({ useConsole: true });
+    const sequelize = useSequelize({
+        ...dbOpnimusNewConfig,
+        options: {
+            logging: false,
+            timezone: "+07:00"
+        }
+    });
+
+    const telegramChatId = "-1001940534866";
+
+    const {
+        AlertStackRtu, AlarmHistoryRtu, TelegramUser, TelegramPersonalUser,
+        Rtu, Regional, Witel, Location, PicLocation
+    } = useModel(sequelize);
+
+    const alert = await AlertStackRtu.findOne({
+        attributes: {
+            include: [
+                [
+                    sequelize.literal(
+                        `(SELECT ${ TelegramUser.tableName }.message_thread_id FROM ${ TelegramUser.tableName }` +
+                        ` WHERE ${ TelegramUser.tableName }.chat_id=telegramChatId)`
+                    ),
+                    "telegramMessageThreadId"
+                ]
+            ]
+        },
+        where: {
+            status: "unsended",
+            // createdAt: { [Op.gte]: startDate },
+            telegramChatId
+        },
+        include: [{
+            model: AlarmHistoryRtu,
+            required: true,
+            include: [{
+                model: Rtu,
+                required: true,
+                include: [{
+                    model: Location,
+                    include: [{
+                        model: PicLocation,
+                        include: [{
+                            model: TelegramUser,
+                            include: [ TelegramPersonalUser ]
+                        }]
+                    }]
+                }, {
+                    model: Regional,
+                    required: true
+                }, {
+                    model: Witel,
+                    required: true
+                }]
+            }]
+        }]
+    });
+
+    // console.log(alert.get({ plain: true }));
+    const chatId = alert.telegramChatId;
+    const messageThreadId = alert.telegramMessageThreadId;
+    const alerts = [ alert.get({ plain: true }) ];
+
+    const bot = useTelegramBot();
+    const callback = result => console.log(result);
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    await sendTelgAlerts(chatId, messageThreadId, alerts, { logger, bot, callback });
+
+    await sequelize.close();
+
+};
+
 // testCase1();
 // testCase2();
-testCase3();
+// testCase3();
+testCase4();

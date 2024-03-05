@@ -604,6 +604,15 @@ module.exports.writeAlertStack = async (witel, alarmIds, alarmHistoryIds, alertT
     }
 };
 
+module.exports.writeAlertStackOpenPort = (witel, alarmIds, alarmHistoryIds, app = {}) => {
+    return this.writeAlertStack(witel, alarmIds, alarmHistoryIds, "open-port", app);
+};
+
+module.exports.writeAlertStackClosePort = async (witel, closedAlarms, app = {}) => {
+    const { alarmIds, alarmHistoryIds } = await this.getNotifiedClosedPortAlarms(closedAlarms, app);
+    await this.writeAlertStack(witel, alarmIds, alarmHistoryIds, "close-port", app);
+};
+
 module.exports.writeAlertStackRtuDown = async (witel, app = {}) => {
     let { logger, jobId, sequelize } = app;
     logger = Logger.getOrCreate(logger);
@@ -659,7 +668,10 @@ module.exports.writeAlertStackRtuDown = async (witel, app = {}) => {
         ]);
         
         const alertStackDatas = [];
+        const updatedAlarmIds = [];
         alarmHistoryRtus.forEach(alarm => {
+
+            updatedAlarmIds.push(alarm.alarmHistoryRtuId);
 
             picUsers.forEach(user => {
                 const isUserMatch = this.hasPlnRules(user.alertUser.alertMode.rules);
@@ -717,7 +729,16 @@ module.exports.writeAlertStackRtuDown = async (witel, app = {}) => {
             return;
         }
 
+        logger.info("writing RTU down alert stack", { jobId, alertStackCount: alertStackDatas.length });
         await AlertStackRtu.bulkCreate(alertStackDatas);
+
+        logger.info("remove RTU down nextAlertAt", { jobId, updatedAlarmIds });
+        await AlarmHistoryRtu.update({ nextAlertAt: null }, {
+            where: {
+                alarmHistoryRtuId: { [Op.in]: updatedAlarmIds }
+            }
+        });
+
         logger.info("writing RTU down alert stack was done", { jobId, alertStackCount: alertStackDatas.length });
 
     } catch(err) {
@@ -869,24 +890,35 @@ module.exports.defineAlarms = (prevAlarms, currPortAlarms) => {
             });
         }
 
-        // if(this.isRtuDown(currPortAlarms[i].rtu_status)) {
-        //     let hasMatches = false;
-        //     for(let k=0; k<prevRtuAlarms.length; k++) {
-        //         let isRtuMatch = this.isAlarmRtuMatch(prevRtuAlarms[k], currPortAlarms[i]);
-        //         if(isRtuMatch) {
-        //             hasMatches = true;
-        //             k = prevRtuAlarms.length;
-        //         }
-        //     }
-        //     if(!hasMatches) {
-        //         newRtuAlarms.push({
-        //             rtuId: currPortAlarms[i].rtu_id,
-        //             rtuSname: currPortAlarms[i].rtu_sname,
-        //             rtuStatus: currPortAlarms[i].rtu_status.toLowerCase(),
-        //             alertStartTime: currPortAlarms[i].alert_start_time
-        //         });
-        //     }
-        // }
+        if(this.isRtuDown(currPortAlarms[i].rtu_status)) {
+            let hasRtuMatches = false;
+            for(let k=0; k<prevRtuAlarms.length; k++) {
+                let isRtuMatch = this.isAlarmRtuMatch(prevRtuAlarms[k], currPortAlarms[i]);
+                if(isRtuMatch) {
+                    hasRtuMatches = true;
+                    k = prevRtuAlarms.length;
+                }
+            }
+
+            let isRtuExists = false;
+            if(!hasRtuMatches) {
+                for(let l=0; l<newRtuAlarms.length; l++) {
+                    if(newRtuAlarms[l].rtuSname == currPortAlarms[i].rtu_sname) {
+                        isRtuExists = true;
+                        l = newRtuAlarms.length;
+                    }
+                }
+            }
+
+            if(!hasRtuMatches && !isRtuExists) {
+                newRtuAlarms.push({
+                    rtuId: currPortAlarms[i].rtu_id,
+                    rtuSname: currPortAlarms[i].rtu_sname,
+                    rtuStatus: currPortAlarms[i].rtu_status.toLowerCase(),
+                    alertStartTime: currPortAlarms[i].alert_start_time
+                });
+            }
+        }
 
     }
 
@@ -906,14 +938,14 @@ module.exports.defineAlarms = (prevAlarms, currPortAlarms) => {
     }
 
     for(let m=0; m<prevRtuAlarms.length; m++) {
-        let hasMatches = false;
+        let hasRtuMatches = false;
         for(let n=0; n<currPortAlarms.length; n++) {
             if(this.isAlarmRtuMatch(prevRtuAlarms[m], currPortAlarms[n])){
-                hasMatches = true;
+                hasRtuMatches = true;
                 n = currPortAlarms.length
             }
         }
-        if(!hasMatches) {
+        if(!hasRtuMatches) {
             closedRtuAlarms.push({
                 alarmHistoryRtuId: prevRtuAlarms[m].alarmHistoryRtuId
             });

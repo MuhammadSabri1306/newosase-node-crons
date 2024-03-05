@@ -47,7 +47,7 @@ const fields = {
     },
     nextAlertAt: {
         type: DataTypes.DATE,
-        allowNull: false
+        allowNull: true
     },
 };
 

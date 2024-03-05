@@ -123,13 +123,9 @@ module.exports.updateAlarms = defineAlarm.updateAlarms;
 module.exports.updateOrCreateAlarms = defineAlarm.updateOrCreateAlarms;
 module.exports.closeRtuAlarms = defineAlarm.closeRtuAlarms;
 module.exports.createRtuAlarms = defineAlarm.createRtuAlarms;
-module.exports.writeAlertStack = defineAlarm.writeAlertStack;
+module.exports.writeAlertStackOpenPort = defineAlarm.writeAlertStackOpenPort;
+module.exports.writeAlertStackClosePort = defineAlarm.writeAlertStackClosePort;
 module.exports.writeAlertStackRtuDown = defineAlarm.writeAlertStackRtuDown;
-
-module.exports.writeAlertStackClosePort = async (witel, closedAlarms, app = {}) => {
-    const { alarmIds, alarmHistoryIds } = await this.getNotifiedClosedPortAlarms(closedAlarms, app);
-    await this.writeAlertStack(witel, alarmIds, alarmHistoryIds, "close-port", app);
-};
 
 module.exports.syncAlarms = (witels, app = {}) => {
     const { watcher } = app;
@@ -187,9 +183,9 @@ module.exports.syncAlarms = (witels, app = {}) => {
                     const openPortAlarmHistoryIds = [ ...openPortAlarms1.alarmHistoryIds, ...openPortAlarms2.alarmHistoryIds ];
 
                     await Promise.all([
-                        this.writeAlertStack(witel, openPortAlarmIds, openPortAlarmHistoryIds, "open-port", { logger, jobId, sequelize }),
+                        this.writeAlertStackOpenPort(witel, openPortAlarmIds, openPortAlarmHistoryIds, { logger, jobId, sequelize }),
                         this.writeAlertStackClosePort(witel, closedAlarms, { logger, jobId, sequelize }),
-                        // this.writeAlertStackRtuDown(witel, { logger, jobId, sequelize })
+                        this.writeAlertStackRtuDown(witel, { logger, jobId, sequelize })
                     ]);
 
                 } catch(err) {
@@ -256,9 +252,8 @@ module.exports.syncAlarms = (witels, app = {}) => {
 
 module.exports.watchNewosaseAlarmWitels = (witels) => {
     const errLogger = new ErrorLogger("alarmwatcher", "NODE CRON watch-newosase-alarm");
-    watch(async (watcher) => {
-        await this.syncAlarms(witels, { watcher });
-    }, {
+    watch(watcher => this.syncAlarms(witels, { watcher }), {
+        onDelay: (delayTime) => console.info(`delaying ${ delayTime }ms`),
         onError: async (err, continueLoop) => {
             console.error(err);
             console.info("sending error log");
@@ -463,9 +458,7 @@ module.exports.sendTelegramAlert = (app = {}) => {
 
 module.exports.watchAlertStack = () => {
     const errLogger = new ErrorLogger("alertwatcher", "NODE CRON watch-alert");
-    watch(async (watcher) => {
-        await this.sendTelegramAlert({ watcher });
-    }, {
+    watch(this.sendTelegramAlert, {
         onDelay: (delayTime) => console.info(`delaying ${ delayTime }ms`),
         onError: async (err, continueLoop) => {
             console.error(err);

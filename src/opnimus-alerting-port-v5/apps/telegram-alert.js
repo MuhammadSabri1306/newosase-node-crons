@@ -573,7 +573,7 @@ module.exports.createTelgTextOpenPort = (alertItem) => {
 
     const msg = TelegramText.create(`${ alarmIcon } ${ title }${ alarmIcon }`).addLine()
         .addText("Pada "+datetimeStr).addLine(2)
-        .addText(descr).addLine()
+        .addText(descr, false).addLine()
         .startCode()
         .addText(`${ tregIcon } Regional   : ${ regional.name }`).addLine()
         .addText(`🏢 Witel      : ${ witel.witelName }`).addLine()

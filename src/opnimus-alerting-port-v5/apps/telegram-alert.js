@@ -6,7 +6,7 @@ const { Op } = require("sequelize");
 const { useModel, toUnderscoredPlain } = require("./models");
 const TelegramText = require("../../core/telegram-text");
 const { isDateObject, toDatetimeString, extractDate, toDatesDiffString } = require("../../helpers/date");
-const { catchRetryTime } = require("../../helpers/telegram-error");
+const { getErrRetryTime, isErrUser, isErrMsgThread } = require("../../helpers/telegram-error");
 const { toFixedNumber } = require("../../helpers/number-format");
 
 module.exports.useTelegramBot = () => {
@@ -28,7 +28,7 @@ module.exports.isTelgErrUserNotFound = (errDescription) => {
     return false;
 };
 
-module.exports.getTelgAlertStackPort = async (app = {}) => {
+module.exports.getTelgAlertStackPort = async (exceptedChatIds, app = {}) => {
     let { logger, sequelize } = app;
     logger = Logger.getOrCreate(logger);
     try {
@@ -39,8 +39,17 @@ module.exports.getTelgAlertStackPort = async (app = {}) => {
         } = useModel(sequelize);
     
         const startDate = new Date();
-        startDate.setHours(startDate.getHours() - 6);
+        // startDate.setHours(startDate.getHours() - 6);
+        startDate.setMinutes(startDate.getMinutes() - 30);
         logger.info("reading unsended telegram alert on alert stack port", { createdAt: `>= ${ toDatetimeString(startDate) }` });
+
+        const whereQuery = {
+            status: "unsended",
+            createdAt: { [Op.gte]: startDate },
+        };
+
+        if(Array.isArray(exceptedChatIds) && exceptedChatIds.length > 0)
+            whereQuery.telegramChatId = { [Op.notIn]: exceptedChatIds };
 
         const alerts = await AlertStack.findAll({
             attributes: {
@@ -54,10 +63,7 @@ module.exports.getTelgAlertStackPort = async (app = {}) => {
                     ]
                 ]
             },
-            where: {
-                status: "unsended",
-                createdAt: { [Op.gte]: startDate },
-            },
+            where: whereQuery,
             include: [{
                 model: AlarmHistory,
                 required: true,
@@ -81,9 +87,18 @@ module.exports.getTelgAlertStackPort = async (app = {}) => {
                         required: true
                     }]
                 }]
-            }]
+            }],
+            order: [
+                [ "alertStackId", "DESC" ]
+            ],
+            limit: 100
         });
-        return alerts;
+        
+        const result = [];
+        for(let i=alerts.length -1; i>=0; i--) {
+            result.push(alerts[i]);
+        }
+        return result;
 
     } catch(err) {
         logger.error(err);
@@ -91,7 +106,7 @@ module.exports.getTelgAlertStackPort = async (app = {}) => {
     }
 };
 
-module.exports.getTelgAlertStackRtu = async (app = {}) => {
+module.exports.getTelgAlertStackRtu = async (exceptedChatIds, app = {}) => {
     let { logger, sequelize } = app;
     logger = Logger.getOrCreate(logger);
     try {
@@ -102,9 +117,18 @@ module.exports.getTelgAlertStackRtu = async (app = {}) => {
         } = useModel(sequelize);
     
         const startDate = new Date();
-        startDate.setHours(startDate.getHours() - 6);
-        logger.info("reading unsended telegram alert on alert stack RTU", { createdAt: `>= ${ toDatetimeString(startDate) }` });
+        // startDate.setHours(startDate.getHours() - 6);
+        startDate.setMinutes(startDate.getMinutes() - 30);
 
+        const whereQuery = {
+            status: "unsended",
+            createdAt: { [Op.gte]: startDate },
+        };
+
+        if(Array.isArray(exceptedChatIds) && exceptedChatIds.length > 0)
+            whereQuery.telegramChatId = { [Op.notIn]: exceptedChatIds };
+
+        logger.info("reading unsended telegram alert on alert stack RTU", { createdAt: `>= ${ toDatetimeString(startDate) }` });
         const alerts = await AlertStackRtu.findAll({
             attributes: {
                 include: [
@@ -144,9 +168,43 @@ module.exports.getTelgAlertStackRtu = async (app = {}) => {
                         required: true
                     }]
                 }]
-            }]
+            }],
+            order: [
+                [ "alertStackRtuId", "DESC" ]
+            ],
+            limit: 100
         });
-        return alerts;
+        
+        const result = [];
+        for(let i=alerts.length -1; i>=0; i--) {
+            result.push(alerts[i]);
+        }
+        return result;
+
+    } catch(err) {
+        logger.error(err);
+        return [];
+    }
+};
+
+module.exports.getExceptedChatIds = async (app = {}) => {
+    let { logger, sequelize } = app;
+    logger = Logger.getOrCreate(logger);
+    try {
+
+        const { TelegramAlertException } = useModel(sequelize);
+        const currDate = new Date();
+
+        await TelegramAlertException.destroy({
+            where: {
+                willDeletedAt: { [Op.lte]: currDate }
+            }
+        });
+
+        const telgAlertExcps = await TelegramAlertException.findAll({
+            attributes: [ "chatId" ]
+        });
+        return telgAlertExcps.map(item => item.chatId);
 
     } catch(err) {
         logger.error(err);
@@ -159,9 +217,10 @@ module.exports.getTelgAlertStack = async (app = {}) => {
     logger = Logger.getOrCreate(logger);
     try {
 
+        const exceptedChatIds = await this.getExceptedChatIds(app);
         const [ portAlerts, rtuAlerts ] = await Promise.all([
-            await this.getTelgAlertStackPort(app),
-            await this.getTelgAlertStackRtu(app),
+            await this.getTelgAlertStackPort(exceptedChatIds, app),
+            await this.getTelgAlertStackRtu(exceptedChatIds, app),
         ]);
 
         if(portAlerts.length < 1)
@@ -275,19 +334,19 @@ module.exports.onTelgAlertSended = async (alert, app = {}) => {
     try {
 
         const { alertStackId, alertStackRtuId, alertType } = alert;
-        if(alertStackId !== undefined) {
+        if(alertStackId) {
             
             const { AlertStack } = useModel(sequelize);
             logger.info("update telegram port alert status as success", { alertStackId });
-            await AlertStack.update({ status: "success" }, {
+            await AlertStack.update({ status: "success", sendedAt: new Date() }, {
                 where: { alertStackId }
             });
 
-        } else if(alertStackRtuId !== undefined) {
+        } else if(alertStackRtuId) {
             
             const { AlertStackRtu } = useModel(sequelize);
             logger.info("update telegram RTU alert status as success", { alertStackRtuId });
-            await AlertStackRtu.update({ status: "success" }, {
+            await AlertStackRtu.update({ status: "success", sendedAt: new Date() }, {
                 where: { alertStackRtuId }
             });
 
@@ -343,74 +402,114 @@ module.exports.onTelgAlertUnsended = async (portAlertIds, rtuAlertIds, app = {})
     }
 };
 
-module.exports.onTelgSendError = async (telegramErr, chatId, app = {}) => {
+// module.exports.onTelgSendError = async (telegramErr, chatId, app = {}) => {
+//     let { logger, sequelize } = app;
+//     logger = Logger.getOrCreate(logger);
+//     try {
+
+//         if(!telegramErr)
+//             throw new Error(`telegramError expect AlertMessageError model's data, ${ telegramErr } given`);
+
+//         const { AlertMessageError, TelegramUser, TelegramPersonalUser, PicLocation, AlertUsers } = useModel(sequelize);
+
+//         let works = [];
+//         works.push(() => {
+//             logger.info("insert telegram error to AlertMessageError", { telegramErr });
+//             return AlertMessageError.create({ ...telegramErr, createdAt: new Date() });
+//         });
+
+//         const isUserNotFound = telegramErr && this.isTelgErrUserNotFound(telegramErr.description) ? true : false;
+//         let telgUser = null;
+//         if(isUserNotFound && chatId) {
+//             telgUser = await TelegramUser.findOne({
+//                 where: { chatId }
+//             });
+//         }
+
+//         if(isUserNotFound && !telgUser) {
+//             logger.info(
+//                 "telegram error user not found was thrown but cannot get the user data in database",
+//                 { telegramErr, chatId, telgUser }
+//             );
+//         } else if(isUserNotFound) {
+
+//             logger.info("telegram error user not found was thrown", { chatId, telgUser: telgUser.get({ plain: true }) });
+
+//             if(telgUser.isPic) {
+//                 works.push(() => {
+//                     logger.info("delete user data from PicLocation", { userId: telgUser.id });
+//                     return PicLocation.destroy({
+//                         where: { userId: telgUser.id }
+//                     });
+//                 });
+//             }
+
+//             if(telgUser.type == "private") {
+//                 works.push(() => {
+//                     logger.info("delete user data from TelegramPersonalUser", { userId: telgUser.id });
+//                     return TelegramPersonalUser.destroy({
+//                         where: { userId: telgUser.id }
+//                     });
+//                 });
+//             }
+
+//             works.push(() => {
+//                 logger.info("delete user data from AlertUsers", { telegramUserId: telgUser.id });
+//                 return AlertUsers.destroy({
+//                     where: { telegramUserId: telgUser.id }
+//                 });
+//             });
+
+//             works.push(() => {
+//                 logger.info("delete user data from TelegramUser", { id: telgUser.id });
+//                 return TelegramUser.destroy({
+//                     where: { id: telgUser.id }
+//                 });
+//             });
+            
+//         }
+
+//         await Promise.all( works.map(work => work()) );
+
+//     } catch(err) {
+//         logger.error(err);
+//     }
+// };
+
+module.exports.writeTelgMsgErr = async (telegramMessageError, app = {}) => {
     let { logger, sequelize } = app;
     logger = Logger.getOrCreate(logger);
     try {
 
-        if(!telegramErr)
-            throw new Error(`telegramError expect AlertMessageError model's data, ${ telegramErr } given`);
+        if(!telegramMessageError)
+            throw new Error(`telegramMessageError expect TelegramMessageError model's data, ${ telegramMessageError } given`);
+        const { TelegramMessageError } = useModel(sequelize);
 
-        const { AlertMessageError, TelegramUser, TelegramPersonalUser, PicLocation, AlertUsers } = useModel(sequelize);
+        logger.info("insert telegram error to TelegramMessageError", { telegramMessageError });
+        if(telegramMessageError.createdAt)
+            telegramMessageError.createdAt = new Date(telegramMessageError.createdAt);
+        await TelegramMessageError.create(telegramMessageError);
 
-        let works = [];
-        works.push(() => {
-            logger.info("insert telegram error to AlertMessageError", { telegramErr });
-            return AlertMessageError.create({ ...telegramErr, createdAt: new Date() });
-        });
+    } catch(err) {
+        logger.error(err);
+    }
+};
 
-        const isUserNotFound = telegramErr && this.isTelgErrUserNotFound(telegramErr.description) ? true : false;
-        let telgUser = null;
-        if(isUserNotFound && chatId) {
-            telgUser = await TelegramUser.findOne({
-                where: { chatId }
-            });
-        }
+module.exports.writeTelgAlertException = async (telegramAlertException, app = {}) => {
+    let { logger, sequelize } = app;
+    logger = Logger.getOrCreate(logger);
+    try {
 
-        if(isUserNotFound && !telgUser) {
-            logger.info(
-                "telegram error user not found was thrown but cannot get the user data in database",
-                { telegramErr, chatId, telgUser }
-            );
-        } else if(isUserNotFound) {
+        if(!telegramAlertException)
+            throw new Error(`telegramAlertException expect TelegramAlertException model's data, ${ telegramAlertException } given`);
+        const { TelegramAlertException } = useModel(sequelize);
 
-            logger.info("telegram error user not found was thrown", { chatId, telgUser: telgUser.get({ plain: true }) });
-
-            if(telgUser.isPic) {
-                works.push(() => {
-                    logger.info("delete user data from PicLocation", { userId: telgUser.id });
-                    return PicLocation.destroy({
-                        where: { userId: telgUser.id }
-                    });
-                });
-            }
-
-            if(telgUser.type == "private") {
-                works.push(() => {
-                    logger.info("delete user data from TelegramPersonalUser", { userId: telgUser.id });
-                    return TelegramPersonalUser.destroy({
-                        where: { userId: telgUser.id }
-                    });
-                });
-            }
-
-            works.push(() => {
-                logger.info("delete user data from AlertUsers", { telegramUserId: telgUser.id });
-                return AlertUsers.destroy({
-                    where: { telegramUserId: telgUser.id }
-                });
-            });
-
-            works.push(() => {
-                logger.info("delete user data from TelegramUser", { id: telgUser.id });
-                return TelegramUser.destroy({
-                    where: { id: telgUser.id }
-                });
-            });
-            
-        }
-
-        await Promise.all( works.map(work => work()) );
+        logger.info("insert telegram chat id to TelegramAlertException", { telegramAlertException });
+        if(telegramAlertException.createdAt)
+            telegramAlertException.createdAt = new Date(telegramAlertException.createdAt);
+        if(telegramAlertException.willDeletedAt)
+            telegramAlertException.willDeletedAt = new Date(telegramAlertException.willDeletedAt);
+        await TelegramAlertException.create(telegramAlertException);
 
     } catch(err) {
         logger.error(err);
@@ -726,6 +825,24 @@ module.exports.createTelgAlertMessage = (alert) => {
     }
 };
 
+module.exports.sendTelgErrInvalidUser = async (traceText, app = {}) => {
+    let { logger, bot, callback } = app;
+    logger = Logger.getOrCreate(logger);
+    try {
+
+        const botLoggerChatId = "-4092116808";
+        const msgText = TelegramText.create()
+            .addBold("Error User tidak valid").addLine(2)
+            .addText("Terdapat error saat mengirimkan telegram alert pada node cron.")
+            .addText(" Silahkan melakukan pengecekan dan mengupdate data telegram user pada database.").addLine()
+            .addCode(traceText);
+        await bot.telegram.sendMessage(botLoggerChatId, msgText.get(), { parse_mode: "Markdown" });
+
+    } catch(err) {
+        logger.error(err);
+    }
+};
+
 module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}) => {
     let { logger, bot, callback } = app;
     logger = Logger.getOrCreate(logger);
@@ -778,30 +895,85 @@ module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}
         }
 
         if(err instanceof TelegramError) {
-            const retryTime = catchRetryTime(err.description);
-            logger.info("failed to send alert message", {
-                chatId,
-                retryTime,
-                alert: lastAlert,
-                unsendedAlerts
-            });
+
+            let telegramAlertExceptionData = null;
+            const telegramMessageErrorData = {
+                alertStackId: lastAlert.alertStackId || null,
+                alertStackRtuId: lastAlert.alertStackRtuId || null,
+                errorCode: err.code,
+                description: err.description,
+                response: JSON.stringify(err.response),
+                createdAt: toDatetimeString(new Date())
+            };
+
+            const retryTime = getErrRetryTime(err.description);
+            if(retryTime > 0) {
+
+                logger.info("failed to send telegram message, too many request", {
+                    chatId,
+                    retryTime,
+                    alert: lastAlert,
+                    unsendedAlerts
+                });
+
+                const currDate = new Date();
+                const deleteDate = new Date( currDate.getTime() + (retryTime * 1000) );
+                telegramAlertExceptionData = {
+                    chatId,
+                    description: err.description,
+                    createdAt: toDatetimeString(currDate),
+                    willDeletedAt: toDatetimeString(deleteDate)
+                };
+
+            } else if(isErrUser(err.description)) {
+
+                logger.info("failed to send telegram message, user not valid", {
+                    chatId,
+                    alert: lastAlert,
+                    unsendedAlerts
+                });
+
+                telegramAlertExceptionData = {
+                    chatId,
+                    description: err.description,
+                    createdAt: toDatetimeString(new Date()),
+                    willDeletedAt: null
+                };
+
+                await this.sendTelgErrInvalidUser(telegramMessageErrorData.response, { bot, logger });
+
+            } else if(isErrMsgThread(err.description)) {
+
+                logger.info("failed to send telegram message, message thread not valid", {
+                    chatId,
+                    messageThreadId,
+                    alert: lastAlert,
+                    unsendedAlerts
+                });
+
+                telegramAlertExceptionData = {
+                    chatId,
+                    description: err.description,
+                    createdAt: toDatetimeString(new Date()),
+                    willDeletedAt: null
+                };
+
+                await this.sendTelgErrInvalidUser(telegramMessageErrorData.response, { bot, logger });
+
+            }
 
             logger.error(err);
-            callback && callback({
+
+            const result = {
                 success: false,
                 alert: lastAlert,
                 unsendedAlerts,
-                telegramErrData: {
-                    chatId,
-                    telegramErr: {
-                        alertId: lastAlert.alertStackId || lastAlert.alertStackRtuId,
-                        description: err.description,
-                        errorCode: err.code,
-                        response: JSON.stringify(err.response)
-                    },
-                    retryTime: retryTime * 1000
-                }
-            });
+                telegramMessageError: telegramMessageErrorData,
+            };
+            if(telegramAlertExceptionData)
+                result.telegramAlertException = telegramAlertExceptionData;
+            callback && callback(result);
+
         } else if(err instanceof FetchError || (err instanceof Error && err.name === "AbortError")) {
             logger.info("error to fetching telegram api", {
                 chatId,

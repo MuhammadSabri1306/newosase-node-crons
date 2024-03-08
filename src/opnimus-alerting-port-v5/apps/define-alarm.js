@@ -137,7 +137,7 @@ module.exports.closeAlarms = async (closedAlarms, app = {}) => {
         
         const updateAlarmWork = () => {
             logger.info("update closed alarms in Alarm model", { jobId, alarmIds });
-            return Alarm.update({ isOpen: false }, {
+            return Alarm.update({ isOpen: false, portSeverity: "normal" }, {
                 where: {
                     alarmId: { [Op.in]: alarmIds }
                 }

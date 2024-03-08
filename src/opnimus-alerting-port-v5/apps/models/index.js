@@ -15,7 +15,9 @@ const { useTelegramPersonalUserModel } = require("./definitions/telegram-persona
 const { useLocationModel } = require("./definitions/location");
 const { usePicLocationModel } = require("./definitions/pic-location");
 const { useAlertMessageErrorModel } = require("./definitions/alert-message-error");
+const { useTelegramMessageErrorModel } = require("./definitions/telegram-message-error");
 const { useAlarmHistoryRtuModel } = require("./definitions/alarm-history-rtu");
+const { useTelegramAlertExceptionModel } = require("./definitions/telegram-alert-exception");
 
 module.exports.useSequelize = (config = {}) => {
     const { database, host, user, password, options } = config;
@@ -50,6 +52,8 @@ module.exports.useModel = (sequelize) => {
     const Location = useLocationModel(sequelize);
     const PicLocation = usePicLocationModel(sequelize);
     const AlertMessageError = useAlertMessageErrorModel(sequelize);
+    const TelegramMessageError = useTelegramMessageErrorModel(sequelize);
+    const TelegramAlertException = useTelegramAlertExceptionModel(sequelize);
 
     /* Define model's relationships */
 
@@ -104,6 +108,7 @@ module.exports.useModel = (sequelize) => {
         AlertModes,
         AlertUsers,
         AlertMessageError,
+        TelegramMessageError,
         TelegramUser,
         TelegramPersonalUser,
         Regional,
@@ -111,6 +116,7 @@ module.exports.useModel = (sequelize) => {
         Rtu,
         Location,
         PicLocation,
+        TelegramAlertException,
     };
 };
 

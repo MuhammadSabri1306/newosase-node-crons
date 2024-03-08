@@ -238,7 +238,22 @@ const testCase4 = async () => {
 
 };
 
+const testCase5 = async () => {
+
+    const sequelize = useSequelize({
+        ...dbOpnimusNewConfig,
+        options: {
+            logging: false,
+            timezone: "+07:00"
+        }
+    });
+
+    const { TelegramMessageError } = useModel(sequelize);
+    console.log(typeof TelegramMessageError.create);
+};
+
 // testCase1();
 // testCase2();
 // testCase3();
-testCase4();
+// testCase4();
+testCase5();

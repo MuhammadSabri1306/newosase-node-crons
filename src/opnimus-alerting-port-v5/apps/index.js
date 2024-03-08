@@ -270,12 +270,13 @@ module.exports.groupAlertStacks = telegramAlert.groupAlertStacks;
 module.exports.setTelgAlertAsSending = telegramAlert.setTelgAlertAsSending;
 module.exports.onTelgAlertSended = telegramAlert.onTelgAlertSended;
 module.exports.onTelgAlertUnsended = telegramAlert.onTelgAlertUnsended;
-module.exports.onTelgSendError = telegramAlert.onTelgSendError;
+module.exports.writeTelgMsgErr = telegramAlert.writeTelgMsgErr;
+module.exports.writeTelgAlertException = telegramAlert.writeTelgAlertException;
 
 module.exports.sendTelegramAlert = (app = {}) => {
     const { watcher } = app;
     if(watcher)
-        addDelay(watcher, 10000);
+        addDelay(watcher, 5000);
     const config = require("./config.json");
     return new Promise(async (resolve) => {
 
@@ -362,7 +363,8 @@ module.exports.sendTelegramAlert = (app = {}) => {
             });
 
             workerAlert.on("message", async (workerData) => {
-                const { success, alert, unsendedAlerts, telegramErrData } = workerData;
+                const { success, alert, unsendedAlerts, telegramMessageError, telegramAlertException } = workerData;
+                const isTelegramError = telegramMessageError || telegramAlertException ? true : false;
 
                 if(success) {
 
@@ -400,7 +402,7 @@ module.exports.sendTelegramAlert = (app = {}) => {
                             jobIndex = getJobIndexByJobId(unsendedJobIds[i]);
                             jobs[jobIndex].done = true;
                         } catch(err) {
-                            logger.info("error when updating job status as success", { jobId: unsendedJobIds[i], jobIndex, alert });
+                            logger.info("error when updating job status as done", { jobId: unsendedJobIds[i], jobIndex, alert });
                             logger.error(err);
                             throw err;
                         }
@@ -415,13 +417,18 @@ module.exports.sendTelegramAlert = (app = {}) => {
                         );
                     });
 
-                    if(telegramErrData) {
-                        if(telegramErrData.retryTime)
-                            addDelay(watcher, telegramErrData.retryTime);
-                        errorHandlers.push(() => {
-                            const { chatId, telegramErr } = telegramErrData;
-                            return this.onTelgSendError(telegramErr, chatId, { logger, sequelize });
-                        });
+                    if(isTelegramError) {
+                        if(telegramMessageError) {
+                            errorHandlers.push(() => {
+                                return this.writeTelgMsgErr(telegramMessageError, { logger, sequelize });
+                            });
+                        }
+
+                        if(telegramAlertException) {
+                            errorHandlers.push(() => {
+                                return this.writeTelgAlertException(telegramAlertException, { logger, sequelize });
+                            });
+                        }
                     }
 
                     await Promise.all( errorHandlers.map(handle => handle()) );
@@ -435,7 +442,7 @@ module.exports.sendTelegramAlert = (app = {}) => {
                     logger.info("alert job is done", { summary: jobSummary });
                 }
 
-                if(!success && !telegramErrData) {
+                if(!success && !isTelegramError) {
                     logger.info("error thrown in workerAlert.onMessage handler", { workerData });
                     throw new Error("error thrown in workerAlert");
                 }
@@ -458,7 +465,7 @@ module.exports.sendTelegramAlert = (app = {}) => {
 
 module.exports.watchAlertStack = () => {
     const errLogger = new ErrorLogger("alertwatcher", "NODE CRON watch-alert");
-    watch(this.sendTelegramAlert, {
+    watch(watcher => this.sendTelegramAlert({ watcher }), {
         onDelay: (delayTime) => console.info(`delaying ${ delayTime }ms`),
         onError: async (err, continueLoop) => {
             console.error(err);

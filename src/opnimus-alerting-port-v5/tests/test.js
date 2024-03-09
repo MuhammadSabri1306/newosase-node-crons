@@ -2,7 +2,7 @@ const dbOpnimusNewConfig = require("../../env/database/opnimus-new-migrated-2");
 const { Op } = require("sequelize");
 const { Telegraf } = require("telegraf");
 const { useSequelize, useModel } = require("../apps/models");
-const { useTelegramBot, sendTelgAlerts, createAlertMessage } = require("../apps/telegram-alert");
+const { useTelegramBot, sendTelgAlerts, createAlertMessage, getExceptedChatIds } = require("../apps/telegram-alert");
 const { Logger } = require("../apps/logger");
 const configBot = require("../../env/bot/opnimus-new-bot");
 
@@ -240,6 +240,7 @@ const testCase4 = async () => {
 
 const testCase5 = async () => {
 
+    const logger = Logger.create({ useConsole: true });
     const sequelize = useSequelize({
         ...dbOpnimusNewConfig,
         options: {
@@ -248,8 +249,65 @@ const testCase5 = async () => {
         }
     });
 
-    const { TelegramMessageError } = useModel(sequelize);
-    console.log(typeof TelegramMessageError.create);
+    const {
+        AlertStack, AlarmHistory, TelegramUser, TelegramPersonalUser,
+        Rtu, Regional, Witel, Location, PicLocation
+    } = useModel(sequelize);
+
+    const exceptedChatIds = await getExceptedChatIds({ logger, sequelize });
+    console.log({ exceptedChatIds });
+
+    const whereQuery = {
+        alertStackId: 44822,
+        telegramChatId: { [Op.notIn]: exceptedChatIds }
+    };
+    const alerts = await AlertStack.findAll({
+        attributes: {
+            include: [
+                [
+                    sequelize.literal(
+                        `(SELECT ${ TelegramUser.tableName }.message_thread_id FROM ${ TelegramUser.tableName }` +
+                        ` WHERE ${ TelegramUser.tableName }.chat_id=telegramChatId)`
+                    ),
+                    "telegramMessageThreadId"
+                ]
+            ]
+        },
+        where: whereQuery,
+        include: [{
+            model: AlarmHistory,
+            required: true,
+            include: [{
+                model: Rtu,
+                required: true,
+                include: [{
+                    model: Location,
+                    include: [{
+                        model: PicLocation,
+                        include: [{
+                            model: TelegramUser,
+                            include: [ TelegramPersonalUser ]
+                        }]
+                    }]
+                }, {
+                    model: Regional,
+                    required: true
+                }, {
+                    model: Witel,
+                    required: true
+                }]
+            }]
+        }],
+        order: [
+            [ "alertStackId", "DESC" ]
+        ],
+        limit: 100
+    });
+
+    alerts.forEach(alert => console.log( alert.get({ plain: true }) ));
+
+    await sequelize.close();
+
 };
 
 // testCase1();

@@ -202,7 +202,8 @@ module.exports.getExceptedChatIds = async (app = {}) => {
         });
 
         const telgAlertExcps = await TelegramAlertException.findAll({
-            attributes: [ "chatId" ]
+            attributes: [ "chatId" ],
+            group: "chatId"
         });
         return telgAlertExcps.map(item => item.chatId);
 
@@ -504,12 +505,28 @@ module.exports.writeTelgAlertException = async (telegramAlertException, app = {}
             throw new Error(`telegramAlertException expect TelegramAlertException model's data, ${ telegramAlertException } given`);
         const { TelegramAlertException } = useModel(sequelize);
 
-        logger.info("insert telegram chat id to TelegramAlertException", { telegramAlertException });
         if(telegramAlertException.createdAt)
             telegramAlertException.createdAt = new Date(telegramAlertException.createdAt);
         if(telegramAlertException.willDeletedAt)
             telegramAlertException.willDeletedAt = new Date(telegramAlertException.willDeletedAt);
-        await TelegramAlertException.create(telegramAlertException);
+
+        const chatId = telegramAlertException.chatId;
+        logger.info("check exists chat id in TelegramAlertException", { chatId });
+        const telgAlertExcp = await TelegramAlertException.findOne({
+            where: { chatId }
+        });
+
+        if(!telgAlertExcp) {
+            logger.info("insert telegram chat id to TelegramAlertException", { telegramAlertException });
+            await TelegramAlertException.create(telegramAlertException);
+        } else {
+            const telegramAlertExceptionId = telgAlertExcp.telegramAlertExceptionId;
+            logger.info("update TelegramAlertException", { telegramAlertExceptionId });
+            await TelegramAlertException.update(telegramAlertException, {
+                where: { telegramAlertExceptionId }
+            });
+        }
+
 
     } catch(err) {
         logger.error(err);
@@ -940,7 +957,7 @@ module.exports.sendTelgAlerts = async (chatId, messageThreadId, alerts, app = {}
                     willDeletedAt: null
                 };
 
-                await this.sendTelgErrInvalidUser(telegramMessageErrorData.response, { bot, logger });
+                // await this.sendTelgErrInvalidUser(telegramMessageErrorData.response, { bot, logger });
 
             } else if(isErrMsgThread(err.description)) {
 

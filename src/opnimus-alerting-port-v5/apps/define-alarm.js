@@ -747,10 +747,12 @@ module.exports.writeAlertStackRtuDown = async (witel, app = {}) => {
     }
 };
 
+module.exports.newosaseBaseUrl = "https://newosase.telkom.co.id/api/v1";
+
 module.exports.createNewosaseHttp = () => {
-    const newosaseBaseUrl = "https://newosase.telkom.co.id/api/v1";
+    const baseURL = this.newosaseBaseUrl;
     return axios.create({
-        baseURL: newosaseBaseUrl,
+        baseURL,
         headers: { "Accept": "application/json" }
     });
 };
@@ -761,6 +763,7 @@ module.exports.getNewosaseAlarms = async (witelId, app = {}) => {
     logger = Logger.getOrCreate(logger);
 
     logger.info("start to fetching newosase", { witelId });
+    const newosaseBaseUrl = this.newosaseBaseUrl;
     const params = { isAlert: 1, witelId };
     
     try {

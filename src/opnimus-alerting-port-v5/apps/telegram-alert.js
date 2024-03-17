@@ -13,20 +13,20 @@ module.exports.useTelegramBot = () => {
     return new Telegraf(configBot.token);
 };
 
-module.exports.isTelgErrUserNotFound = (errDescription) => {
-    const descrs = [
-        "Forbidden: bot was kicked from the supergroup chat",
-        "Forbidden: bot was kicked from the group chat",
-        "Bad Request: chat not found"
-    ];
-    for(let i=0; i<descrs.length; i++) {
-        if(errDescription.indexOf(descrs[i]) >= 0) {
-            i = descrs.length;
-            return true;
-        }
-    }
-    return false;
-};
+// module.exports.isTelgErrUserNotFound = (errDescription) => {
+//     const descrs = [
+//         "Forbidden: bot was kicked from the supergroup chat",
+//         "Forbidden: bot was kicked from the group chat",
+//         "Bad Request: chat not found"
+//     ];
+//     for(let i=0; i<descrs.length; i++) {
+//         if(errDescription.indexOf(descrs[i]) >= 0) {
+//             i = descrs.length;
+//             return true;
+//         }
+//     }
+//     return false;
+// };
 
 module.exports.getTelgAlertStackPort = async (exceptedChatIds, app = {}) => {
     let { logger, sequelize } = app;

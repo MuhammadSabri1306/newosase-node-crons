@@ -19,6 +19,7 @@ module.exports.isErrUser = (errorDescr) => {
         "user is deactivated",
         "bot was kicked",
         "bot was blocked",
+        "group chat was upgraded",
     ];
     for(let i=0; i<keywords.length; i++) {
         if(errorDescr.indexOf(keywords[i]) >= 0) {

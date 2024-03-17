@@ -310,8 +310,35 @@ const testCase5 = async () => {
 
 };
 
+const testCase6 = () => {
+
+    const isErrUser = (errorDescr) => {
+        const keywords = [
+            "chat not found",
+            "user not found",
+            "user is deactivated",
+            "bot was kicked",
+            "bot was blocked",
+            "group chat was upgraded",
+        ];
+        for(let i=0; i<keywords.length; i++) {
+            if(errorDescr.indexOf(keywords[i]) >= 0) {
+                i = keywords.length;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const errorDescr = "group chat was upgraded to a supergroup chat";
+    const result = isErrUser(errorDescr);
+    console.log(result);
+
+};
+
 // testCase1();
 // testCase2();
 // testCase3();
 // testCase4();
-testCase5();
+// testCase5();
+testCase6();

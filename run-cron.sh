@@ -9,6 +9,7 @@ echo "sudo nohup node ./src/opnimus-alerting-port-v5 watch-newosase-alarm > ./sr
 sudo nohup node ./src/opnimus-alerting-port-v5 watch-newosase-alarm > ./src/opnimus-alerting-port-v5/logs/cron.log 2>&1 &
 echo "sudo nohup node ./src/opnimus-alerting-port-v5 watch-alert > ./src/opnimus-alerting-port-v5/logs/cron2.log 2>&1 &"
 sudo nohup node ./src/opnimus-alerting-port-v5 watch-alert > ./src/opnimus-alerting-port-v5/logs/cron2.log 2>&1 &
+# sudo nohup node --max-old-space-size=4096 ./src/opnimus-alerting-port-v5 watch-alert > ./src/opnimus-alerting-port-v5/logs/cron2.log 2>&1 &
 
 
 # run osase-collect-kwh

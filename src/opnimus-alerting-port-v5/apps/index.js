@@ -128,12 +128,11 @@ module.exports.writeAlertStackClosePort = defineAlarm.writeAlertStackClosePort;
 module.exports.writeAlertStackRtuDown = defineAlarm.writeAlertStackRtuDown;
 
 module.exports.syncAlarms = (witels, app = {}) => {
-    const { watcher } = app;
+    const { watcher, config } = app;
     if(watcher)
         addDelay(watcher, 10000);
-    const config = require("./config.json");
 
-    return new Promise(async (resolve) => {
+    return new Promise(async (resolve, reject) => {
 
         // const maxDbPool = Math.round(config.newosaseWatcher.maximumDbPool / config.newosaseWatcher.maximumThread);
         // const sequelize = this.createSequelize({ max: maxDbPool });
@@ -244,24 +243,31 @@ module.exports.syncAlarms = (witels, app = {}) => {
         });
     
         workerDefineAlarm.on("error", err => {
-            throw err;
+
+            logger.info("error thrown inside workerDefineAlarm");
+            logger.error(err);
+
+            logger.info("add delay 60s then do rejection");
+            addDelay(watcher, 60000);
+            reject(err);
+
         });
 
     });
 };
 
 module.exports.watchNewosaseAlarmWitels = (witels) => {
-    const errLogger = new ErrorLogger("alarmwatcher", "NODE CRON watch-newosase-alarm");
-    watch(watcher => this.syncAlarms(witels, { watcher }), {
-        onDelay: (delayTime) => console.info(`delaying ${ delayTime }ms`),
-        onError: async (err, continueLoop) => {
-            console.error(err);
-            console.info("sending error log");
-            await errLogger.catch(err).logTo("-4092116808");
-            console.info("continue loop");
-            continueLoop();
+    const config = require("./config.json");
+    watch(
+        async (watcher) => {
+            await this.syncAlarms(witels, { watcher, config });
+        }, {
+            onError: async (err, continueLoop) => {
+                console.error(err);
+                continueLoop();
+            }
         }
-    });
+    );
 };
 
 module.exports.isTelegramErrorUserNotFound = telegramAlert.isTelegramErrorUserNotFound;
@@ -274,22 +280,21 @@ module.exports.writeTelgMsgErr = telegramAlert.writeTelgMsgErr;
 module.exports.writeTelgAlertException = telegramAlert.writeTelgAlertException;
 
 module.exports.sendTelegramAlert = (app = {}) => {
-    const { watcher } = app;
-    if(watcher)
-        addDelay(watcher, 5000);
-    const config = require("./config.json");
+    const { watcher, config } = app;
+    const sequelize = this.createSequelize({ max: config.telegramAlerting.maximumDbPool });
+    const logger = Logger.create({
+        useStream: true,
+        fileName: "telegram-alerting",
+        dirName: path.resolve(__dirname, "../logs")
+    });
+
     return new Promise(async (resolve) => {
 
-        const sequelize = this.createSequelize({ max: config.telegramAlerting.maximumDbPool });
-        const logger = Logger.create({
-            useStream: true,
-            fileName: "telegram-alerting",
-            dirName: path.resolve(__dirname, "../logs")
-        });
-        
         const closeChecker = async () => {
             logger.info("alert checker was closed");
-            // await sequelize.close();
+            await sequelize.close();
+            if(watcher)
+                addDelay(watcher, 5000);
             resolve();
         };
 
@@ -407,31 +412,18 @@ module.exports.sendTelegramAlert = (app = {}) => {
                             throw err;
                         }
                     }
-
-                    const errorHandlers = [];
-                    errorHandlers.push(() => {
-                        return this.onTelgAlertUnsended(
-                            unsendedPortAlertIds,
-                            unsendedRtuAlertIds,
-                            { logger, sequelize }
-                        );
-                    });
+                    
+                    await this.onTelgAlertUnsended(unsendedPortAlertIds, unsendedRtuAlertIds, { logger, sequelize });
 
                     if(isTelegramError) {
                         if(telegramMessageError) {
-                            errorHandlers.push(() => {
-                                return this.writeTelgMsgErr(telegramMessageError, { logger, sequelize });
-                            });
+                            await this.writeTelgMsgErr(telegramMessageError, { logger, sequelize });
                         }
 
                         if(telegramAlertException) {
-                            errorHandlers.push(() => {
-                                return this.writeTelgAlertException(telegramAlertException, { logger, sequelize });
-                            });
+                            this.writeTelgAlertException(telegramAlertException, { logger, sequelize });
                         }
                     }
-
-                    await Promise.all( errorHandlers.map(handle => handle()) );
 
                 }
 
@@ -453,9 +445,17 @@ module.exports.sendTelegramAlert = (app = {}) => {
             });
 
             workerAlert.on("error", async (err) => {
+
                 logger.info("error thrown inside workerAlert");
                 logger.error(err);
-                throw err;
+
+                logger.info("close database connection");
+                await sequelize.close();
+
+                logger.info("add delay 60s then do rejection");
+                addDelay(watcher, 60000);
+                reject(err);
+
             });
 
         });
@@ -464,15 +464,15 @@ module.exports.sendTelegramAlert = (app = {}) => {
 };
 
 module.exports.watchAlertStack = () => {
-    const errLogger = new ErrorLogger("alertwatcher", "NODE CRON watch-alert");
-    watch(watcher => this.sendTelegramAlert({ watcher }), {
-        onDelay: (delayTime) => console.info(`delaying ${ delayTime }ms`),
-        onError: async (err, continueLoop) => {
-            console.error(err);
-            console.info("sending error log");
-            await errLogger.catch(err).logTo("-4092116808");
-            console.info("continue loop");
-            continueLoop();
+    const config = require("./config.json");
+    watch(
+        async (watcher) => {
+            await this.sendTelegramAlert({ watcher, config });
+        }, {
+            onError: async (err, continueLoop) => {
+                console.error(err);
+                continueLoop();
+            }
         }
-    });
+    );
 };

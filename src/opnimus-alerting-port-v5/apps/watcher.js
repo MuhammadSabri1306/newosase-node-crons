@@ -28,7 +28,7 @@ const setWatcherEvents = (watcher, { onBefore, onAfter, onDelay, onError }) => {
 }
 
 const getWatcherBiggestDelayTime = (watcher, defaultTime = 0) => {
-    if(!watcher.$delayTimes.length < 1)
+    if(!watcher.$delayTimes.length)
         return defaultTime;
     const timestamps = watcher.$delayTimes.map(item => item.resultTimestamp);
     const biggestTimestamp = Math.max(...timestamps);

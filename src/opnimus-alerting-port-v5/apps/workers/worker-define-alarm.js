@@ -36,7 +36,8 @@ const createJobs = (jobs, witelsAlarmDatas, witelsRtuAlarmDatas, app = {}) => {
 
             logger.info("start do defining alarms", {
                 witelId,
-                prevAlarmsCount: prevAlarms.length,
+                prevPortAlarmsCount: prevPortAlarms.length,
+                prevRtuAlarmsCount: prevRtuAlarms.length,
                 currAlarm: newosaseAlarms.length
             });
 
